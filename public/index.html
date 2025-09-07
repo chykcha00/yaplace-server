@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Yaplace Game</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Главное меню -->
+    <div id="main-menu">
+        <div class="menu-box">
+            <h1>🎨 Yaplace</h1>
+            <p>Онлайн полотно, где каждый игрок может ставить пиксели</p>
+            <input type="text" id="player-name" placeholder="Введите ваше имя">
+            <button id="start-game">Начать игру</button>
+        </div>
+    </div>
+
+    <!-- Игровой интерфейс -->
+    <div id="header">
+        <h1>Yaplace</h1>
+        <div id="pixel-counter">
+            Пиксели: <span id="pixels">100</span>
+            <button id="collect-pixels">+10</button>
+            <span id="collect-timer"></span>
+        </div>
+        <button id="open-gallery">🖼 Рисунки недели</button>
+    </div>
+
+    <div id="container">
+        <canvas id="board"></canvas>
+
+        <!-- Sidebar с чатом -->
+        <div id="sidebar">
+            <h2>Чат</h2>
+
+            <!-- Контейнер чата -->
+            <div id="chat-container">
+                <div id="chat-global" class="chat-box"></div>
+
+                <!-- Поле ввода -->
+                <div id="chat-controls">
+                    <input type="text" id="chat-input" placeholder="Введите сообщение">
+                    <button id="send-chat">Отправить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="footer">
+        <div id="palette"></div>
+        <button id="reset-view">Сброс вида</button>
+    </div>
+
+    <!-- Модалка галереи -->
+    <div id="gallery-modal" class="hidden">
+        <div class="gallery-content">
+            <button id="close-gallery">❌</button>
+            <h2>🖼 Рисунки недели</h2>
+            <div id="gallery"></div>
+        </div>
+    </div>
+
+    <script src="main.js" defer></script>
+</body>
+</html>
