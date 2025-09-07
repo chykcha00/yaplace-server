@@ -1,34 +1,50 @@
-﻿const path = require("path");
+﻿const fs = require("fs");
+const path = require("path");
 const express = require("express");
 const http = require("http");
 const WebSocket = require("ws");
 
 const app = express();
 
-// Раздаём папку public/
-app.use(express.static(path.join(__dirname, "public")));
+// Папка для хранения данных
+const DATA_DIR = path.join(__dirname, "data");
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
 
+const BOARD_FILE = path.join(DATA_DIR, "board.json");
+const CHAT_FILE = path.join(DATA_DIR, "chat.json");
+
+// === Canvas ===
+const width = 128;
+const height = 128;
+
+// Загружаем доску
+let board;
+try {
+    board = JSON.parse(fs.readFileSync(BOARD_FILE));
+} catch {
+    board = Array.from({ length: height }, () =>
+        Array.from({ length: width }, () => "#FFFFFF")
+    );
+}
+
+// Загружаем историю чата
+let chatHistory;
+try {
+    chatHistory = JSON.parse(fs.readFileSync(CHAT_FILE));
+} catch {
+    chatHistory = [];
+}
+
+// Список игроков
+let players = [];
+
+app.use(express.static(path.join(__dirname, "public")));
 app.get("/", (_req, res) => {
-    res.sendFile(path.join(__dirname, "public", "index.html"));
+    res.sendFile(path.join(__dirname, "public/index.html"));
 });
 
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
-
-// Настройки доски
-const WIDTH = 128;
-const HEIGHT = 128;
-
-let board = Array.from({ length: HEIGHT }, () =>
-    Array.from({ length: WIDTH }, () => "#FFFFFF")
-);
-
-let players = [];
-let chatHistory = []; // max 100
-
-// Ограничение пикселей за сессию (опционально)
-const MAX_PIXEL_PER_SECOND = 10;
-const pixelTimestamps = new Map();
 
 wss.on("connection", (ws) => {
     console.log("🟢 Игрок подключился");
@@ -40,7 +56,6 @@ wss.on("connection", (ws) => {
     };
     players.push(player);
 
-    // Отправка инициализации
     ws.send(JSON.stringify({
         type: "init",
         board,
@@ -48,30 +63,25 @@ wss.on("connection", (ws) => {
         chat: chatHistory
     }));
 
-    ws.on("message", (msg) => {
+    ws.on("message", msg => {
         try {
             const data = JSON.parse(msg);
 
+            // === Пиксели ===
             if (data.type === "setPixel") {
-                const { x, y, color } = data;
-
-                // Ограничение спама пикселями
-                const now = Date.now();
-                const timestamps = pixelTimestamps.get(ws) || [];
-                const recent = timestamps.filter(t => now - t < 1000);
-                if (recent.length >= MAX_PIXEL_PER_SECOND) return;
-                recent.push(now);
-                pixelTimestamps.set(ws, recent);
-
-                if (x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT) {
+                const { x, y, color, player: playerName } = data;
+                if (x >= 0 && x < width && y >= 0 && y < height) {
                     board[y][x] = color;
+
+                    // Сохраняем доску на диск
+                    fs.writeFileSync(BOARD_FILE, JSON.stringify(board));
 
                     const update = JSON.stringify({
                         type: "pixel",
                         x,
                         y,
                         color,
-                        player: player.name,
+                        player: playerName
                     });
 
                     wss.clients.forEach(client => {
@@ -79,9 +89,13 @@ wss.on("connection", (ws) => {
                     });
                 }
             }
+
+            // === Установка имени ===
             else if (data.type === "setName") {
-                player.name = data.player || "Гость";
+                player.name = data.player;
             }
+
+            // === Чат ===
             else if (data.type === "chat") {
                 const chatMsg = {
                     type: "chat",
@@ -94,6 +108,9 @@ wss.on("connection", (ws) => {
                 chatHistory.push(chatMsg);
                 if (chatHistory.length > 100) chatHistory.shift();
 
+                // Сохраняем чат на диск
+                fs.writeFileSync(CHAT_FILE, JSON.stringify(chatHistory));
+
                 const chatStr = JSON.stringify(chatMsg);
 
                 if (data.channel === "global") {
@@ -102,9 +119,7 @@ wss.on("connection", (ws) => {
                     });
                 } else if (data.channel === "team") {
                     players.forEach(p => {
-                        if (p.team === player.team && p.ws.readyState === WebSocket.OPEN) {
-                            p.ws.send(chatStr);
-                        }
+                        if (p.team === player.team && p.ws.readyState === WebSocket.OPEN) p.ws.send(chatStr);
                     });
                 }
             }
@@ -117,12 +132,10 @@ wss.on("connection", (ws) => {
     ws.on("close", () => {
         console.log("🔴 Игрок отключился");
         players = players.filter(p => p.ws !== ws);
-        pixelTimestamps.delete(ws);
     });
 });
 
-// Динамический порт для хостов типа Railway
 const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => {
-    console.log(`✅ Сервер запущен на порту ${PORT}`);
+    console.log(`✅ Сервер запущен. Порт: ${PORT}`);
 });
