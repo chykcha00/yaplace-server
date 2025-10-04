@@ -9,10 +9,9 @@ let playerName = "Гость";
 document.addEventListener("DOMContentLoaded", () => {
     const savedName = localStorage.getItem("playerName");
     if (savedName) {
-        // Если имя уже есть, используем его и скрываем поле
         playerName = savedName;
         playerNameInput.value = savedName;
-        playerNameInput.style.display = "none"; // скрываем поле
+        playerNameInput.style.display = "none";
     }
 });
 
@@ -30,7 +29,6 @@ const boardH = 128;
 off.width = boardW;
 off.height = boardH;
 
-// Заполняем белым
 offCtx.fillStyle = "#ffffff";
 offCtx.fillRect(0, 0, boardW, boardH);
 
@@ -55,34 +53,30 @@ const paletteColors = [
 let currentColor = paletteColors[0];
 let activeDiv = null;
 
-// создаём палитру
 paletteDiv.innerHTML = "";
 paletteColors.forEach(color => {
     const div = document.createElement('div');
     div.style.background = color;
     div.addEventListener('click', () => {
         currentColor = color;
-
         if (activeDiv) activeDiv.classList.remove('active');
         div.classList.add('active');
         activeDiv = div;
     });
     div.addEventListener('mouseenter', () => div.classList.add('hover'));
     div.addEventListener('mouseleave', () => div.classList.remove('hover'));
-
     paletteDiv.appendChild(div);
-
     if (color === currentColor) {
         div.classList.add('active');
         activeDiv = div;
     }
 });
 
-// Прокрутка палитры колесиком мыши (скорость увеличена)
+// === Прокрутка палитры ===
 paletteDiv.addEventListener("wheel", (e) => {
     e.preventDefault();
     paletteDiv.scrollBy({
-        left: e.deltaY > 0 ? 180 : -180, // скорость прокрутки
+        left: e.deltaY > 0 ? 180 : -180,
         behavior: "smooth"
     });
 });
@@ -114,7 +108,7 @@ function draw() {
 window.addEventListener('resize', fitCanvasToScreen);
 fitCanvasToScreen();
 
-// === Управление камерой (панорамирование) ===
+// === Камера ===
 canvas.addEventListener('mousedown', e => {
     if (e.button === 2) {
         isPanning = true;
@@ -133,7 +127,7 @@ canvas.addEventListener('mouseup', () => isPanning = false);
 canvas.addEventListener('mouseleave', () => isPanning = false);
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 
-// === Плавный зум ===
+// === Зум ===
 let targetScale = scale;
 let targetOffsetX = offsetX;
 let targetOffsetY = offsetY;
@@ -141,13 +135,10 @@ let zoomAnimating = false;
 
 function animateZoom() {
     if (!zoomAnimating) return;
-
     scale += (targetScale - scale) * 0.2;
     offsetX += (targetOffsetX - offsetX) * 0.2;
     offsetY += (targetOffsetY - offsetY) * 0.2;
-
     draw();
-
     if (Math.abs(targetScale - scale) < 0.01 &&
         Math.abs(targetOffsetX - offsetX) < 0.5 &&
         Math.abs(targetOffsetY - offsetY) < 0.5) {
@@ -158,29 +149,22 @@ function animateZoom() {
         draw();
         return;
     }
-
     requestAnimationFrame(animateZoom);
 }
 
 canvas.addEventListener("wheel", e => {
     e.preventDefault();
     if (isPanning) return;
-
     const zoomFactor = e.deltaY < 0 ? 1.2 : 0.8;
-
     const rect = canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
-
     const cx = (e.clientX - rect.left) * dpr;
     const cy = (e.clientY - rect.top) * dpr;
-
     const worldX = (cx - offsetX) / scale;
     const worldY = (cy - offsetY) / scale;
-
     targetScale *= zoomFactor;
     targetOffsetX = cx - worldX * targetScale;
     targetOffsetY = cy - worldY * targetScale;
-
     if (!zoomAnimating) {
         zoomAnimating = true;
         requestAnimationFrame(animateZoom);
@@ -188,17 +172,25 @@ canvas.addEventListener("wheel", e => {
 }, { passive: false });
 
 // === WebSocket ===
-const proto = location.protocol === "https:" ? "wss" : "ws";
-const host = location.host || "localhost:8080";
-const socket = new WebSocket(`${proto}://${host}`);
+const socket = new WebSocket("wss://yaplace.onrender.com");
 
+// ✅ Обработка ошибок
 socket.addEventListener("open", () => {
-    console.log("Соединение установлено");
+    console.log("✅ Соединение установлено");
 });
 
+socket.addEventListener("error", () => {
+    alert("⚠️ Ошибка подключения к серверу. Попробуйте обновить страницу позже.");
+});
+
+socket.addEventListener("close", () => {
+    const retry = confirm("🔌 Соединение потеряно. Переподключиться?");
+    if (retry) location.reload();
+});
+
+// === Обработка сообщений ===
 socket.addEventListener("message", event => {
     const data = JSON.parse(event.data);
-
     if (data.type === "init") {
         for (let y = 0; y < boardH; y++) {
             for (let x = 0; x < boardW; x++) {
@@ -207,25 +199,12 @@ socket.addEventListener("message", event => {
             }
         }
         draw();
-
-        if (Array.isArray(data.chat)) {
-            const chatBox = document.getElementById("chat-global");
-            chatBox.innerHTML = "";
-            data.chat.forEach(msg => {
-                const p = document.createElement("p");
-                p.innerHTML = `<b>${msg.player}:</b> ${msg.text}`;
-                chatBox.appendChild(p);
-            });
-            chatBox.scrollTop = chatBox.scrollHeight;
-        }
     }
-
     if (data.type === "pixel") {
         offCtx.fillStyle = data.color;
         offCtx.fillRect(data.x, data.y, 1, 1);
         draw();
     }
-
     if (data.type === "chat") {
         const p = document.createElement("p");
         p.innerHTML = `<b>${data.player}:</b> ${data.text}`;
@@ -238,16 +217,12 @@ socket.addEventListener("message", event => {
 // === Клик для пикселя ===
 canvas.addEventListener('click', e => {
     if (e.button !== 0 || pixelCount <= 0) return;
-
     const rect = canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
-
     const cx = (e.clientX - rect.left) * dpr;
     const cy = (e.clientY - rect.top) * dpr;
-
     const x = Math.floor((cx - offsetX) / scale);
     const y = Math.floor((cy - offsetY) / scale);
-
     if (x >= 0 && y >= 0 && x < boardW && y < boardH) {
         socket.send(JSON.stringify({
             type: "setPixel",
@@ -256,19 +231,13 @@ canvas.addEventListener('click', e => {
             color: currentColor,
             player: playerName
         }));
-
         pixelCount--;
         pixelCounter.textContent = pixelCount;
     }
 });
 
-// === Кнопка сброса в правом нижнем углу ===
+// === Кнопка сброса ===
 const resetBtn = document.getElementById('reset-view');
-resetBtn.style.position = "fixed";
-resetBtn.style.right = "10px";
-resetBtn.style.bottom = "10px";
-resetBtn.style.padding = "6px 10px";
-
 resetBtn.addEventListener('click', () => {
     scale = 4;
     const rect = canvas.getBoundingClientRect();
@@ -277,17 +246,15 @@ resetBtn.addEventListener('click', () => {
     draw();
 });
 
-// === Старт игры с сохранением имени ===
+// === Старт игры ===
 startButton.addEventListener('click', () => {
     if (!localStorage.getItem("playerName")) {
         const name = playerNameInput.value.trim();
         playerName = name !== "" ? name : "Гость";
         localStorage.setItem("playerName", playerName);
     }
-
     mainMenu.remove();
     draw();
-
     socket.send(JSON.stringify({
         type: "setName",
         player: playerName
@@ -313,73 +280,4 @@ function sendChat() {
 sendChatBtn?.addEventListener("click", sendChat);
 chatInput?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") sendChat();
-});
-
-// === Галерея ===
-const openGalleryBtn = document.getElementById("open-gallery");
-const galleryModal = document.getElementById("gallery-modal");
-const closeGalleryBtn = document.getElementById("close-gallery");
-const addSnapshotBtn = document.getElementById("add-snapshot");
-const gallery = document.getElementById("gallery");
-
-openGalleryBtn?.addEventListener("click", () => {
-    galleryModal?.classList.remove("hidden");
-    galleryModal?.setAttribute("aria-hidden", "false");
-});
-closeGalleryBtn?.addEventListener("click", () => {
-    galleryModal?.classList.add("hidden");
-    galleryModal?.setAttribute("aria-hidden", "true");
-});
-galleryModal?.addEventListener("click", (e) => {
-    if (e.target === galleryModal) closeGalleryBtn?.click();
-});
-window.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && !galleryModal?.classList.contains("hidden")) {
-        closeGalleryBtn?.click();
-    }
-});
-addSnapshotBtn?.addEventListener("click", () => {
-    const img = new Image();
-    img.src = canvas.toDataURL("image/png");
-    img.alt = `snapshot-${Date.now()}`;
-    gallery?.prepend(img);
-});
-
-// === Сбор пикселей ===
-document.addEventListener("DOMContentLoaded", () => {
-    const collectBtn = document.getElementById("collect-pixels");
-    const collectTimer = document.getElementById("collect-timer");
-    const pixelsEl = document.getElementById("pixels");
-
-    let localPixelCount = parseInt(pixelsEl.textContent, 10);
-    let nextCollectTime = 0;
-
-    function updateCollectUI() {
-        const now = Date.now();
-        if (now >= nextCollectTime) {
-            collectBtn.disabled = false;
-            collectTimer.textContent = "";
-        } else {
-            collectBtn.disabled = true;
-            const remaining = Math.ceil((nextCollectTime - now) / 1000);
-            const min = Math.floor(remaining / 60);
-            const sec = remaining % 60;
-            collectTimer.textContent = `⏳ ${min}:${sec.toString().padStart(2, "0")}`;
-        }
-    }
-
-    collectBtn.addEventListener("click", () => {
-        const now = Date.now();
-        if (now >= nextCollectTime) {
-            pixelCount += 10;
-            localPixelCount = pixelCount;
-            pixelsEl.textContent = localPixelCount;
-
-            nextCollectTime = now + 5 * 60 * 1000;
-            updateCollectUI();
-        }
-    });
-
-    setInterval(updateCollectUI, 1000);
-    updateCollectUI();
 });
