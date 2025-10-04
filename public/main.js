@@ -40,6 +40,18 @@ let isPanning = false;
 let panStart = { x: 0, y: 0 };
 let viewStart = { x: 0, y: 0 };
 
+// Для тачей и инерции
+let lastTouchDistance = null;
+let lastTouchCenter = null;
+let velocity = { x: 0, y: 0 };
+let lastPanTime = 0;
+let inertiaActive = false;
+
+let targetScale = scale;
+let targetOffsetX = offsetX;
+let targetOffsetY = offsetY;
+let zoomAnimating = false;
+
 // === Палитра ===
 const paletteDiv = document.getElementById('palette');
 const paletteColors = [
@@ -108,40 +120,18 @@ function draw() {
 window.addEventListener('resize', fitCanvasToScreen);
 fitCanvasToScreen();
 
-// === Камера ===
-canvas.addEventListener('mousedown', e => {
-    if (e.button === 2) {
-        isPanning = true;
-        panStart = { x: e.clientX, y: e.clientY };
-        viewStart = { x: offsetX, y: offsetY };
-    }
-});
-canvas.addEventListener('mousemove', e => {
-    if (isPanning) {
-        offsetX = viewStart.x + (e.clientX - panStart.x);
-        offsetY = viewStart.y + (e.clientY - panStart.y);
-        draw();
-    }
-});
-canvas.addEventListener('mouseup', () => isPanning = false);
-canvas.addEventListener('mouseleave', () => isPanning = false);
-canvas.addEventListener('contextmenu', e => e.preventDefault());
-
-// === Зум ===
-let targetScale = scale;
-let targetOffsetX = offsetX;
-let targetOffsetY = offsetY;
-let zoomAnimating = false;
-
+// === Анимация зума ===
 function animateZoom() {
     if (!zoomAnimating) return;
     scale += (targetScale - scale) * 0.2;
     offsetX += (targetOffsetX - offsetX) * 0.2;
     offsetY += (targetOffsetY - offsetY) * 0.2;
     draw();
-    if (Math.abs(targetScale - scale) < 0.01 &&
+    if (
+        Math.abs(targetScale - scale) < 0.01 &&
         Math.abs(targetOffsetX - offsetX) < 0.5 &&
-        Math.abs(targetOffsetY - offsetY) < 0.5) {
+        Math.abs(targetOffsetY - offsetY) < 0.5
+    ) {
         scale = targetScale;
         offsetX = targetOffsetX;
         offsetY = targetOffsetY;
@@ -152,24 +142,148 @@ function animateZoom() {
     requestAnimationFrame(animateZoom);
 }
 
-canvas.addEventListener("wheel", e => {
-    e.preventDefault();
-    if (isPanning) return;
-    const zoomFactor = e.deltaY < 0 ? 1.2 : 0.8;
-    const rect = canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    const cx = (e.clientX - rect.left) * dpr;
-    const cy = (e.clientY - rect.top) * dpr;
-    const worldX = (cx - offsetX) / scale;
-    const worldY = (cy - offsetY) / scale;
-    targetScale *= zoomFactor;
-    targetOffsetX = cx - worldX * targetScale;
-    targetOffsetY = cy - worldY * targetScale;
-    if (!zoomAnimating) {
-        zoomAnimating = true;
-        requestAnimationFrame(animateZoom);
+// === Инерция ===
+function animateInertia() {
+    if (!inertiaActive) return;
+    offsetX += velocity.x;
+    offsetY += velocity.y;
+    draw();
+    velocity.x *= 0.95;
+    velocity.y *= 0.95;
+    if (Math.abs(velocity.x) < 0.1 && Math.abs(velocity.y) < 0.1) {
+        inertiaActive = false;
+        return;
+    }
+    requestAnimationFrame(animateInertia);
+}
+
+// === Управление мышью ===
+canvas.addEventListener("mousedown", (e) => {
+    if (e.button === 2) {
+        isPanning = true;
+        inertiaActive = false;
+        panStart = { x: e.clientX, y: e.clientY };
+        viewStart = { x: offsetX, y: offsetY };
+        lastPanTime = performance.now();
+    }
+});
+
+canvas.addEventListener("mousemove", (e) => {
+    if (isPanning) {
+        const now = performance.now();
+        const dt = now - lastPanTime;
+        offsetX = viewStart.x + (e.clientX - panStart.x);
+        offsetY = viewStart.y + (e.clientY - panStart.y);
+        velocity.x = (e.movementX) / dt * 16;
+        velocity.y = (e.movementY) / dt * 16;
+        draw();
+        lastPanTime = now;
+    }
+});
+
+canvas.addEventListener("mouseup", () => {
+    if (isPanning) {
+        isPanning = false;
+        inertiaActive = true;
+        requestAnimationFrame(animateInertia);
+    }
+});
+canvas.addEventListener("mouseleave", () => (isPanning = false));
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+
+// === Зум колесиком ===
+canvas.addEventListener(
+    "wheel",
+    (e) => {
+        e.preventDefault();
+        if (isPanning) return;
+        const zoomFactor = e.deltaY < 0 ? 1.2 : 0.8;
+        const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        const cx = (e.clientX - rect.left) * dpr;
+        const cy = (e.clientY - rect.top) * dpr;
+        const worldX = (cx - offsetX) / scale;
+        const worldY = (cy - offsetY) / scale;
+        targetScale *= zoomFactor;
+        targetOffsetX = cx - worldX * targetScale;
+        targetOffsetY = cy - worldY * targetScale;
+        if (!zoomAnimating) {
+            zoomAnimating = true;
+            requestAnimationFrame(animateZoom);
+        }
+    },
+    { passive: false }
+);
+
+// === Сенсорные события (тач) ===
+canvas.addEventListener("touchstart", (e) => {
+    if (e.touches.length === 1) {
+        isPanning = true;
+        inertiaActive = false;
+        panStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        viewStart = { x: offsetX, y: offsetY };
+        lastPanTime = performance.now();
+    } else if (e.touches.length === 2) {
+        isPanning = false;
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        lastTouchDistance = Math.hypot(dx, dy);
+        lastTouchCenter = {
+            x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+            y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+        };
     }
 }, { passive: false });
+
+canvas.addEventListener("touchmove", (e) => {
+    e.preventDefault();
+    if (e.touches.length === 1 && isPanning) {
+        const now = performance.now();
+        const dt = now - lastPanTime;
+        const dx = e.touches[0].clientX - panStart.x;
+        const dy = e.touches[0].clientY - panStart.y;
+        offsetX = viewStart.x + dx;
+        offsetY = viewStart.y + dy;
+        velocity.x = (dx / dt) * 16;
+        velocity.y = (dy / dt) * 16;
+        draw();
+        lastPanTime = now;
+    } else if (e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const distance = Math.hypot(dx, dy);
+        const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        const center = {
+            x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+            y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+        };
+        if (lastTouchDistance) {
+            const zoomFactor = distance / lastTouchDistance;
+            targetScale = scale * zoomFactor;
+            const cx = (center.x - rect.left) * dpr;
+            const cy = (center.y - rect.top) * dpr;
+            const worldX = (cx - offsetX) / scale;
+            const worldY = (cy - offsetY) / scale;
+            targetOffsetX = cx - worldX * targetScale;
+            targetOffsetY = cy - worldY * targetScale;
+            zoomAnimating = true;
+            requestAnimationFrame(animateZoom);
+        }
+        lastTouchDistance = distance;
+        lastTouchCenter = center;
+    }
+}, { passive: false });
+
+canvas.addEventListener("touchend", () => {
+    if (isPanning) {
+        isPanning = false;
+        inertiaActive = true;
+        requestAnimationFrame(animateInertia);
+    }
+    lastTouchDistance = null;
+    lastTouchCenter = null;
+});
 
 // === WebSocket ===
 const socket = new WebSocket("wss://yaplace-server.onrender.com");
@@ -178,11 +292,9 @@ const socket = new WebSocket("wss://yaplace-server.onrender.com");
 socket.addEventListener("open", () => {
     console.log("✅ Соединение установлено");
 });
-
 socket.addEventListener("error", () => {
     alert("⚠️ Ошибка подключения к серверу. Попробуйте обновить страницу позже.");
 });
-
 socket.addEventListener("close", () => {
     const retry = confirm("🔌 Соединение потеряно. Переподключиться?");
     if (retry) location.reload();
