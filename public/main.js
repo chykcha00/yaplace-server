@@ -187,6 +187,7 @@ socket.addEventListener("close", () => {
     const retry = confirm("🔌 Соединение потеряно. Переподключиться?");
     if (retry) location.reload();
 });
+socket.addEventListener("open", () => console.log("✅ WebSocket открыт с сервером"));
 
 // === Обработка сообщений ===
 socket.addEventListener("message", event => {
