@@ -1,5 +1,4 @@
-﻿// server.js
-const express = require("express");
+﻿const express = require("express");
 const http = require("http");
 const WebSocket = require("ws");
 const path = require("path");
@@ -16,6 +15,43 @@ let board = Array.from({ length: boardH }, () => Array(boardW).fill("#FFFFFF"));
 
 // История чата
 let chat = [];
+
+// === Запрещённые слова ===
+const badWords = [
+    // Русский мат
+    "хуй", "хуи", "хую", "хуем", "хуя", "хуёв", "хуев",
+    "пизда", "пиздец", "пизд", "пизжу", "пиздишь",
+    "ебать", "ебал", "ебло", "ебан", "ебуч", "еблан",
+    "блядь", "бля", "блядина", "бляха",
+    "сука", "суки", "сучка", "сучонок",
+    "мразь", "гондон", "придурок", "идиот", "тупой", "дебил", "даун",
+    "шлюха", "проститутка", "гнида",
+
+    // Английский мат
+    "fuck", "fucking", "fucker", "motherfucker",
+    "shit", "bullshit",
+    "bitch", "bastard",
+    "asshole", "dick", "cock", "pussy", "slut",
+
+    // Политические и спорные имена
+    "putin", "путин",
+    "zelensky", "зеленский",
+    "trump", "трамп",
+    "biden", "байден",
+    "navalny", "навальный"
+];
+
+// === Фильтрация текста ===
+function filterMessage(text) {
+    let filtered = text;
+
+    for (const word of badWords) {
+        const regex = new RegExp(word, "gi"); // без учёта регистра
+        filtered = filtered.replace(regex, (match) => "*".repeat(match.length));
+    }
+
+    return filtered;
+}
 
 // Статика (клиентская часть)
 app.use(express.static(path.join(__dirname, "public")));
@@ -41,14 +77,16 @@ wss.on("connection", (ws) => {
             }
 
             if (data.type === "chat") {
-                const msg = { player: data.player || "Гость", text: data.text };
+                const msg = {
+                    player: data.player || "Гость",
+                    text: filterMessage(data.text) // ✅ фильтрация
+                };
                 chat.push(msg);
                 if (chat.length > 100) chat.shift();
                 broadcast({ type: "chat", player: msg.player, text: msg.text });
             }
 
             if (data.type === "setName") {
-                // Можно использовать для будущих фич (например, привязка к игроку)
                 console.log(`Игрок установил имя: ${data.player}`);
             }
         } catch (e) {
