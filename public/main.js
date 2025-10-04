@@ -172,7 +172,7 @@ canvas.addEventListener("wheel", e => {
 }, { passive: false });
 
 // === WebSocket ===
-const socket = new WebSocket("wss://yaplace.onrender.com");
+const socket = new WebSocket("wss://yaplace-server.onrender.com");
 
 // ✅ Обработка ошибок
 socket.addEventListener("open", () => {
