@@ -105,13 +105,11 @@ function draw() {
 window.addEventListener('resize', fitCanvasToScreen);
 fitCanvasToScreen();
 
-
-// === Управление камерой (мышь + тач) ===
+// === Камера и зум ===
 let isPanning = false;
 let panStart = { x: 0, y: 0 };
 let viewStart = { x: 0, y: 0 };
 let lastPinchDist = null;
-
 let targetScale = scale;
 let targetOffsetX = offsetX;
 let targetOffsetY = offsetY;
@@ -154,7 +152,7 @@ canvas.addEventListener('mouseup', () => isPanning = false);
 canvas.addEventListener('mouseleave', () => isPanning = false);
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 
-// === Колёсико зума ===
+// === Зум колесом ===
 canvas.addEventListener("wheel", e => {
     e.preventDefault();
     if (isPanning) return;
@@ -167,7 +165,7 @@ canvas.addEventListener("wheel", e => {
     const worldX = (cx - offsetX) / scale;
     const worldY = (cy - offsetY) / scale;
 
-    targetScale = Math.min(Math.max(scale * zoomFactor, 1), 64); // ограничение зума
+    targetScale = Math.min(Math.max(scale * zoomFactor, 1), 64);
     targetOffsetX = cx - worldX * targetScale;
     targetOffsetY = cy - worldY * targetScale;
 
@@ -230,7 +228,6 @@ canvas.addEventListener("touchend", e => {
     }
 });
 
-
 // === WebSocket ===
 const socket = new WebSocket("wss://yaplace-server.onrender.com");
 
@@ -238,23 +235,22 @@ const socket = new WebSocket("wss://yaplace-server.onrender.com");
 socket.addEventListener("message", event => {
     const data = JSON.parse(event.data);
 
-    // 🛑 Если имя отклонено
     if (data.type === "nameRejected") {
         alert(data.reason);
         localStorage.removeItem("playerName");
-        const nameInput = document.getElementById("player-name");
-        const menu = document.getElementById("main-menu");
-
-        // показываем меню снова
-        if (menu && nameInput) {
-            menu.style.display = "flex";
-            nameInput.style.display = "block";
-            nameInput.value = "";
-        }
+        mainMenu.style.display = "flex";
+        playerNameInput.style.display = "block";
+        playerNameInput.value = "";
         return;
     }
 
-    // === Инициализация поля ===
+    if (data.type === "nameAccepted") {
+        console.log("✅ Имя принято:", data.player);
+        mainMenu.style.display = "none";
+        draw();
+        return;
+    }
+
     if (data.type === "init") {
         for (let y = 0; y < boardH; y++) {
             for (let x = 0; x < boardW; x++) {
@@ -266,7 +262,6 @@ socket.addEventListener("message", event => {
         return;
     }
 
-    // === Изменение пикселя ===
     if (data.type === "pixel") {
         offCtx.fillStyle = data.color;
         offCtx.fillRect(data.x, data.y, 1, 1);
@@ -274,7 +269,6 @@ socket.addEventListener("message", event => {
         return;
     }
 
-    // === Сообщение чата ===
     if (data.type === "chat") {
         const p = document.createElement("p");
         p.innerHTML = `<b>${data.player}:</b> ${data.text}`;
@@ -285,15 +279,15 @@ socket.addEventListener("message", event => {
     }
 });
 
-// === События WebSocket ===
 socket.addEventListener("open", () => {
     console.log("✅ Соединение установлено");
 });
 
 socket.addEventListener("error", () => {
-    alert("⚠️ Ошибка подключения к с
+    alert("⚠️ Ошибка подключения к серверу");
+});
 
-// === Клик для пикселя ===
+// === Клик по канвасу ===
 canvas.addEventListener('click', e => {
     if (e.button !== 0 || pixelCount <= 0) return;
     const rect = canvas.getBoundingClientRect();
@@ -315,7 +309,7 @@ canvas.addEventListener('click', e => {
     }
 });
 
-// === Кнопка сброса ===
+// === Сброс камеры ===
 const resetBtn = document.getElementById('reset-view');
 resetBtn.addEventListener('click', () => {
     scale = 4;
@@ -328,36 +322,26 @@ resetBtn.addEventListener('click', () => {
     draw();
 });
 
-    // === Старт игры ===
-    startButton.addEventListener('click', () => {
-        const name = playerNameInput.value.trim();
+// === Старт игры ===
+startButton.addEventListener('click', () => {
+    const name = playerNameInput.value.trim();
+    if (!name) {
+        alert("Введите имя перед началом игры!");
+        return;
+    }
 
-        // Если имя пустое
-        if (!name) {
-            alert("Введите имя перед началом игры!");
-            return;
-        }
+    playerName = name;
+    localStorage.setItem("playerName", playerName);
 
-        // Сохраняем и отправляем имя
-        playerName = name;
-        localStorage.setItem("playerName", playerName);
-
-        // Проверяем, что сокет подключён
-        if (socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({
-                type: "setName",
-                player: playerName
-            }));
-        } else {
-            alert("Соединение с сервером ещё не установлено. Попробуйте через пару секунд.");
-            return;
-        }
-
-        // Прячем меню без перезагрузки
-        mainMenu.style.display = "none";
-        draw();
-    });
-
+    if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({
+            type: "setName",
+            player: playerName
+        }));
+    } else {
+        alert("Соединение с сервером ещё не установлено. Попробуйте через пару секунд.");
+    }
+});
 
 // === Чат ===
 const chatInput = document.getElementById("chat-input");

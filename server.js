@@ -26,14 +26,12 @@ const badWords = [
     "сука", "суки", "сучка", "сучонок",
     "мразь", "мрази", "гондон", "гандон", "придурок", "идиот", "тупой", "дебил", "даун",
     "шлюха", "проститутка", "гнида",
-
     // Английский мат
     "fuck", "fucking", "fucker", "motherfucker",
     "shit", "bullshit",
     "bitch", "bastard",
     "asshole", "dick", "cock", "pussy", "slut",
-
-    // Политические и спорные имена
+    // Политические
     "putin", "путин",
     "zelensky", "зеленский",
     "trump", "трамп",
@@ -41,12 +39,12 @@ const badWords = [
     "navalny", "навальный"
 ];
 
-// === Фильтрация сообщений чата ===
+// === Фильтрация текста ===
 function filterMessage(text) {
     let filtered = text;
     for (const word of badWords) {
         const regex = new RegExp(word, "gi");
-        filtered = filtered.replace(regex, (match) => "*".repeat(match.length));
+        filtered = filtered.replace(regex, (m) => "*".repeat(m.length));
     }
     return filtered;
 }
@@ -58,9 +56,11 @@ function isNameAllowed(name) {
     return !badWords.some(word => lowered.includes(word));
 }
 
-// === Отдача клиентской части ===
+// === Раздача клиента ===
 app.use(express.static(path.join(__dirname, "public")));
-app.get("/", (_req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
+app.get("/", (_req, res) =>
+    res.sendFile(path.join(__dirname, "public", "index.html"))
+);
 
 // === WebSocket ===
 wss.on("connection", (ws) => {
@@ -72,26 +72,6 @@ wss.on("connection", (ws) => {
     ws.on("message", (message) => {
         try {
             const data = JSON.parse(message);
-
-            // === Рисование пикселя ===
-            if (data.type === "setPixel") {
-                const { x, y, color, player } = data;
-                if (x >= 0 && y >= 0 && x < boardW && y < boardH) {
-                    board[y][x] = color;
-                    broadcast({ type: "pixel", x, y, color, player });
-                }
-            }
-
-            // === Сообщение в чат ===
-            if (data.type === "chat") {
-                const msg = {
-                    player: data.player || "Гость",
-                    text: filterMessage(data.text)
-                };
-                chat.push(msg);
-                if (chat.length > 100) chat.shift();
-                broadcast({ type: "chat", player: msg.player, text: msg.text });
-            }
 
             // === Установка имени ===
             if (data.type === "setName") {
@@ -105,7 +85,31 @@ wss.on("connection", (ws) => {
                     return;
                 }
                 ws.playerName = name;
+                ws.send(JSON.stringify({ type: "nameAccepted", player: name }));
                 console.log(`✅ Игрок установил имя: ${name}`);
+                return;
+            }
+
+            // === Рисование пикселя ===
+            if (data.type === "setPixel") {
+                const { x, y, color, player } = data;
+                if (x >= 0 && y >= 0 && x < boardW && y < boardH) {
+                    board[y][x] = color;
+                    broadcast({ type: "pixel", x, y, color, player });
+                }
+                return;
+            }
+
+            // === Сообщение в чат ===
+            if (data.type === "chat") {
+                const msg = {
+                    player: data.player || "Гость",
+                    text: filterMessage(data.text)
+                };
+                chat.push(msg);
+                if (chat.length > 100) chat.shift();
+                broadcast({ type: "chat", player: msg.player, text: msg.text });
+                return;
             }
 
         } catch (e) {
@@ -124,6 +128,6 @@ function broadcast(msg) {
     });
 }
 
-// === Запуск сервера ===
+// === Запуск ===
 const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => console.log(`🌍 Сервер запущен на порту ${PORT}`));
