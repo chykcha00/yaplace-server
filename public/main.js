@@ -36,21 +36,6 @@ offCtx.fillRect(0, 0, boardW, boardH);
 let scale = 4;
 let offsetX = 0;
 let offsetY = 0;
-let isPanning = false;
-let panStart = { x: 0, y: 0 };
-let viewStart = { x: 0, y: 0 };
-
-// Для тачей и инерции
-let lastTouchDistance = null;
-let lastTouchCenter = null;
-let velocity = { x: 0, y: 0 };
-let lastPanTime = 0;
-let inertiaActive = false;
-
-let targetScale = scale;
-let targetOffsetX = offsetX;
-let targetOffsetY = offsetY;
-let zoomAnimating = false;
 
 // === Палитра ===
 const paletteDiv = document.getElementById('palette');
@@ -120,190 +105,156 @@ function draw() {
 window.addEventListener('resize', fitCanvasToScreen);
 fitCanvasToScreen();
 
-// === Анимация зума ===
+
+// === Управление камерой (мышь + тач) ===
+let isPanning = false;
+let panStart = { x: 0, y: 0 };
+let viewStart = { x: 0, y: 0 };
+let lastPinchDist = null;
+
+let targetScale = scale;
+let targetOffsetX = offsetX;
+let targetOffsetY = offsetY;
+let zoomAnimating = false;
+
 function animateZoom() {
     if (!zoomAnimating) return;
     scale += (targetScale - scale) * 0.2;
     offsetX += (targetOffsetX - offsetX) * 0.2;
     offsetY += (targetOffsetY - offsetY) * 0.2;
     draw();
-    if (
-        Math.abs(targetScale - scale) < 0.01 &&
+    if (Math.abs(targetScale - scale) < 0.01 &&
         Math.abs(targetOffsetX - offsetX) < 0.5 &&
-        Math.abs(targetOffsetY - offsetY) < 0.5
-    ) {
+        Math.abs(targetOffsetY - offsetY) < 0.5) {
         scale = targetScale;
         offsetX = targetOffsetX;
         offsetY = targetOffsetY;
         zoomAnimating = false;
-        draw();
-        return;
+    } else {
+        requestAnimationFrame(animateZoom);
     }
-    requestAnimationFrame(animateZoom);
 }
 
-// === Инерция ===
-function animateInertia() {
-    if (!inertiaActive) return;
-    offsetX += velocity.x;
-    offsetY += velocity.y;
-    draw();
-    velocity.x *= 0.95;
-    velocity.y *= 0.95;
-    if (Math.abs(velocity.x) < 0.1 && Math.abs(velocity.y) < 0.1) {
-        inertiaActive = false;
-        return;
-    }
-    requestAnimationFrame(animateInertia);
-}
-
-// === Управление мышью ===
-canvas.addEventListener("mousedown", (e) => {
+// === Мышь ===
+canvas.addEventListener('mousedown', e => {
     if (e.button === 2) {
         isPanning = true;
-        inertiaActive = false;
         panStart = { x: e.clientX, y: e.clientY };
         viewStart = { x: offsetX, y: offsetY };
-        lastPanTime = performance.now();
     }
 });
-
-canvas.addEventListener("mousemove", (e) => {
+canvas.addEventListener('mousemove', e => {
     if (isPanning) {
-        const now = performance.now();
-        const dt = now - lastPanTime;
         offsetX = viewStart.x + (e.clientX - panStart.x);
         offsetY = viewStart.y + (e.clientY - panStart.y);
-        velocity.x = (e.movementX) / dt * 16;
-        velocity.y = (e.movementY) / dt * 16;
         draw();
-        lastPanTime = now;
     }
 });
+canvas.addEventListener('mouseup', () => isPanning = false);
+canvas.addEventListener('mouseleave', () => isPanning = false);
+canvas.addEventListener('contextmenu', e => e.preventDefault());
 
-canvas.addEventListener("mouseup", () => {
-    if (isPanning) {
-        isPanning = false;
-        inertiaActive = true;
-        requestAnimationFrame(animateInertia);
+// === Колёсико зума ===
+canvas.addEventListener("wheel", e => {
+    e.preventDefault();
+    if (isPanning) return;
+
+    const zoomFactor = e.deltaY < 0 ? 1.2 : 0.8;
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const cx = (e.clientX - rect.left) * dpr;
+    const cy = (e.clientY - rect.top) * dpr;
+    const worldX = (cx - offsetX) / scale;
+    const worldY = (cy - offsetY) / scale;
+
+    targetScale = Math.min(Math.max(scale * zoomFactor, 1), 64); // ограничение зума
+    targetOffsetX = cx - worldX * targetScale;
+    targetOffsetY = cy - worldY * targetScale;
+
+    if (!zoomAnimating) {
+        zoomAnimating = true;
+        requestAnimationFrame(animateZoom);
     }
-});
-canvas.addEventListener("mouseleave", () => (isPanning = false));
-canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+}, { passive: false });
 
-// === Зум колесиком ===
-canvas.addEventListener(
-    "wheel",
-    (e) => {
-        e.preventDefault();
-        if (isPanning) return;
-        const zoomFactor = e.deltaY < 0 ? 1.2 : 0.8;
-        const rect = canvas.getBoundingClientRect();
-        const dpr = window.devicePixelRatio || 1;
-        const cx = (e.clientX - rect.left) * dpr;
-        const cy = (e.clientY - rect.top) * dpr;
-        const worldX = (cx - offsetX) / scale;
-        const worldY = (cy - offsetY) / scale;
-        targetScale *= zoomFactor;
-        targetOffsetX = cx - worldX * targetScale;
-        targetOffsetY = cy - worldY * targetScale;
-        if (!zoomAnimating) {
-            zoomAnimating = true;
-            requestAnimationFrame(animateZoom);
-        }
-    },
-    { passive: false }
-);
-
-// === Сенсорные события (тач) ===
-canvas.addEventListener("touchstart", (e) => {
+// === Сенсорные устройства ===
+canvas.addEventListener("touchstart", e => {
     if (e.touches.length === 1) {
         isPanning = true;
-        inertiaActive = false;
         panStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
         viewStart = { x: offsetX, y: offsetY };
-        lastPanTime = performance.now();
+        lastPinchDist = null;
     } else if (e.touches.length === 2) {
-        isPanning = false;
-        const dx = e.touches[0].clientX - e.touches[1].clientX;
-        const dy = e.touches[0].clientY - e.touches[1].clientY;
-        lastTouchDistance = Math.hypot(dx, dy);
-        lastTouchCenter = {
-            x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
-            y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
-        };
+        const dx = e.touches[1].clientX - e.touches[0].clientX;
+        const dy = e.touches[1].clientY - e.touches[0].clientY;
+        lastPinchDist = Math.sqrt(dx * dx + dy * dy);
     }
-}, { passive: false });
+});
 
-canvas.addEventListener("touchmove", (e) => {
+canvas.addEventListener("touchmove", e => {
     e.preventDefault();
     if (e.touches.length === 1 && isPanning) {
-        const now = performance.now();
-        const dt = now - lastPanTime;
-        const dx = e.touches[0].clientX - panStart.x;
-        const dy = e.touches[0].clientY - panStart.y;
-        offsetX = viewStart.x + dx;
-        offsetY = viewStart.y + dy;
-        velocity.x = (dx / dt) * 16;
-        velocity.y = (dy / dt) * 16;
+        offsetX = viewStart.x + (e.touches[0].clientX - panStart.x);
+        offsetY = viewStart.y + (e.touches[0].clientY - panStart.y);
         draw();
-        lastPanTime = now;
     } else if (e.touches.length === 2) {
-        const dx = e.touches[0].clientX - e.touches[1].clientX;
-        const dy = e.touches[0].clientY - e.touches[1].clientY;
-        const distance = Math.hypot(dx, dy);
-        const rect = canvas.getBoundingClientRect();
-        const dpr = window.devicePixelRatio || 1;
-        const center = {
-            x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
-            y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
-        };
-        if (lastTouchDistance) {
-            const zoomFactor = distance / lastTouchDistance;
-            targetScale = scale * zoomFactor;
-            const cx = (center.x - rect.left) * dpr;
-            const cy = (center.y - rect.top) * dpr;
+        const dx = e.touches[1].clientX - e.touches[0].clientX;
+        const dy = e.touches[1].clientY - e.touches[0].clientY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (lastPinchDist) {
+            const zoomFactor = dist / lastPinchDist;
+            const rect = canvas.getBoundingClientRect();
+            const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+            const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
             const worldX = (cx - offsetX) / scale;
             const worldY = (cy - offsetY) / scale;
+
+            targetScale = Math.min(Math.max(scale * zoomFactor, 1), 64);
             targetOffsetX = cx - worldX * targetScale;
             targetOffsetY = cy - worldY * targetScale;
-            zoomAnimating = true;
-            requestAnimationFrame(animateZoom);
+
+            if (!zoomAnimating) {
+                zoomAnimating = true;
+                requestAnimationFrame(animateZoom);
+            }
         }
-        lastTouchDistance = distance;
-        lastTouchCenter = center;
+        lastPinchDist = dist;
     }
 }, { passive: false });
 
-canvas.addEventListener("touchend", () => {
-    if (isPanning) {
+canvas.addEventListener("touchend", e => {
+    if (e.touches.length === 0) {
         isPanning = false;
-        inertiaActive = true;
-        requestAnimationFrame(animateInertia);
+        lastPinchDist = null;
     }
-    lastTouchDistance = null;
-    lastTouchCenter = null;
 });
+
 
 // === WebSocket ===
 const socket = new WebSocket("wss://yaplace-server.onrender.com");
 
-// ✅ Обработка ошибок
-socket.addEventListener("open", () => {
-    console.log("✅ Соединение установлено");
-});
-socket.addEventListener("error", () => {
-    alert("⚠️ Ошибка подключения к серверу. Попробуйте обновить страницу позже.");
-});
-socket.addEventListener("close", () => {
-    const retry = confirm("🔌 Соединение потеряно. Переподключиться?");
-    if (retry) location.reload();
-});
-socket.addEventListener("open", () => console.log("✅ WebSocket открыт с сервером"));
-
 // === Обработка сообщений ===
 socket.addEventListener("message", event => {
     const data = JSON.parse(event.data);
+
+    // 🛑 Если имя отклонено
+    if (data.type === "nameRejected") {
+        alert(data.reason);
+        localStorage.removeItem("playerName");
+        const nameInput = document.getElementById("player-name");
+        const menu = document.getElementById("main-menu");
+
+        // показываем меню снова
+        if (menu && nameInput) {
+            menu.style.display = "flex";
+            nameInput.style.display = "block";
+            nameInput.value = "";
+        }
+        return;
+    }
+
+    // === Инициализация поля ===
     if (data.type === "init") {
         for (let y = 0; y < boardH; y++) {
             for (let x = 0; x < boardW; x++) {
@@ -312,20 +263,35 @@ socket.addEventListener("message", event => {
             }
         }
         draw();
+        return;
     }
+
+    // === Изменение пикселя ===
     if (data.type === "pixel") {
         offCtx.fillStyle = data.color;
         offCtx.fillRect(data.x, data.y, 1, 1);
         draw();
+        return;
     }
+
+    // === Сообщение чата ===
     if (data.type === "chat") {
         const p = document.createElement("p");
         p.innerHTML = `<b>${data.player}:</b> ${data.text}`;
         const chatBox = document.getElementById("chat-global");
         chatBox.appendChild(p);
         chatBox.scrollTop = chatBox.scrollHeight;
+        return;
     }
 });
+
+// === События WebSocket ===
+socket.addEventListener("open", () => {
+    console.log("✅ Соединение установлено");
+});
+
+socket.addEventListener("error", () => {
+    alert("⚠️ Ошибка подключения к с
 
 // === Клик для пикселя ===
 canvas.addEventListener('click', e => {
@@ -356,6 +322,9 @@ resetBtn.addEventListener('click', () => {
     const rect = canvas.getBoundingClientRect();
     offsetX = (rect.width / 2) - (boardW * scale / 2);
     offsetY = (rect.height / 2) - (boardH * scale / 2);
+    targetScale = scale;
+    targetOffsetX = offsetX;
+    targetOffsetY = offsetY;
     draw();
 });
 

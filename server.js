@@ -10,21 +10,21 @@ const wss = new WebSocket.Server({ server });
 const boardW = 128;
 const boardH = 128;
 
-// Игровое поле (двумерный массив цветов)
+// === Игровое поле (двумерный массив цветов) ===
 let board = Array.from({ length: boardH }, () => Array(boardW).fill("#FFFFFF"));
 
-// История чата
+// === История чата ===
 let chat = [];
 
 // === Запрещённые слова ===
 const badWords = [
     // Русский мат
-    "хуй", "хуи", "хую", "хуем", "хуя", "хуёв", "хуев",
-    "пизда", "пиздец", "пизд", "пизжу", "пиздишь",
+    "хуй", "хуи", "хую", "хуем", "хуя", "хуёв", "хуев", "нахуя",
+    "пизда", "пиздец", "пизд", "пизжу", "пиздишь", "пидр", "пидор", "пидар",
     "ебать", "ёбаный", "ебал", "ебло", "ебан", "ебуч", "еблан",
     "блядь", "бля", "блять", "блядина", "бляха",
     "сука", "суки", "сучка", "сучонок",
-    "мразь", "мрази", "гондон", "придурок", "идиот", "тупой", "дебил", "даун",
+    "мразь", "мрази", "гондон", "гандон", "придурок", "идиот", "тупой", "дебил", "даун",
     "шлюха", "проститутка", "гнида",
 
     // Английский мат
@@ -41,33 +41,39 @@ const badWords = [
     "navalny", "навальный"
 ];
 
-// === Фильтрация текста ===
+// === Фильтрация сообщений чата ===
 function filterMessage(text) {
     let filtered = text;
-
     for (const word of badWords) {
-        const regex = new RegExp(word, "gi"); // без учёта регистра
+        const regex = new RegExp(word, "gi");
         filtered = filtered.replace(regex, (match) => "*".repeat(match.length));
     }
-
     return filtered;
 }
 
-// Статика (клиентская часть)
+// === Проверка допустимости имени ===
+function isNameAllowed(name) {
+    if (!name) return false;
+    const lowered = name.toLowerCase();
+    return !badWords.some(word => lowered.includes(word));
+}
+
+// === Отдача клиентской части ===
 app.use(express.static(path.join(__dirname, "public")));
 app.get("/", (_req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
 
-// WebSocket
+// === WebSocket ===
 wss.on("connection", (ws) => {
     console.log("✅ Новый игрок подключился");
 
-    // Отправляем текущую доску и чат
+    // Отправляем начальные данные
     ws.send(JSON.stringify({ type: "init", board, chat }));
 
     ws.on("message", (message) => {
         try {
             const data = JSON.parse(message);
 
+            // === Рисование пикселя ===
             if (data.type === "setPixel") {
                 const { x, y, color, player } = data;
                 if (x >= 0 && y >= 0 && x < boardW && y < boardH) {
@@ -76,19 +82,32 @@ wss.on("connection", (ws) => {
                 }
             }
 
+            // === Сообщение в чат ===
             if (data.type === "chat") {
                 const msg = {
                     player: data.player || "Гость",
-                    text: filterMessage(data.text) // ✅ фильтрация
+                    text: filterMessage(data.text)
                 };
                 chat.push(msg);
                 if (chat.length > 100) chat.shift();
                 broadcast({ type: "chat", player: msg.player, text: msg.text });
             }
 
+            // === Установка имени ===
             if (data.type === "setName") {
-                console.log(`Игрок установил имя: ${data.player}`);
+                const name = (data.player || "").trim();
+                if (!isNameAllowed(name)) {
+                    ws.send(JSON.stringify({
+                        type: "nameRejected",
+                        reason: "Имя содержит запрещённые слова. Пожалуйста, выберите другое."
+                    }));
+                    console.log(`⛔ Отклонено имя: ${name}`);
+                    return;
+                }
+                ws.playerName = name;
+                console.log(`✅ Игрок установил имя: ${name}`);
             }
+
         } catch (e) {
             console.error("Ошибка обработки сообщения:", e);
         }
@@ -97,6 +116,7 @@ wss.on("connection", (ws) => {
     ws.on("close", () => console.log("❌ Игрок отключился"));
 });
 
+// === Рассылка всем игрокам ===
 function broadcast(msg) {
     const str = JSON.stringify(msg);
     wss.clients.forEach(client => {
@@ -104,5 +124,6 @@ function broadcast(msg) {
     });
 }
 
+// === Запуск сервера ===
 const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => console.log(`🌍 Сервер запущен на порту ${PORT}`));
