@@ -328,20 +328,36 @@ resetBtn.addEventListener('click', () => {
     draw();
 });
 
-// === Старт игры ===
-startButton.addEventListener('click', () => {
-    if (!localStorage.getItem("playerName")) {
+    // === Старт игры ===
+    startButton.addEventListener('click', () => {
         const name = playerNameInput.value.trim();
-        playerName = name !== "" ? name : "Гость";
+
+        // Если имя пустое
+        if (!name) {
+            alert("Введите имя перед началом игры!");
+            return;
+        }
+
+        // Сохраняем и отправляем имя
+        playerName = name;
         localStorage.setItem("playerName", playerName);
-    }
-    mainMenu.remove();
-    draw();
-    socket.send(JSON.stringify({
-        type: "setName",
-        player: playerName
-    }));
-});
+
+        // Проверяем, что сокет подключён
+        if (socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({
+                type: "setName",
+                player: playerName
+            }));
+        } else {
+            alert("Соединение с сервером ещё не установлено. Попробуйте через пару секунд.");
+            return;
+        }
+
+        // Прячем меню без перезагрузки
+        mainMenu.style.display = "none";
+        draw();
+    });
+
 
 // === Чат ===
 const chatInput = document.getElementById("chat-input");
