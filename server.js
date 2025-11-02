@@ -2,70 +2,76 @@
 const http = require("http");
 const WebSocket = require("ws");
 const path = require("path");
-const fs = require("fs");
+const { MongoClient } = require("mongodb");
 
+// === Настройки ===
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
-
 const boardW = 128;
 const boardH = 128;
 
-// === Папка для сохранений ===
-const SAVE_DIR = path.join(__dirname, "data");
-const BOARD_FILE = path.join(SAVE_DIR, "board.json");
-const CHAT_FILE = path.join(SAVE_DIR, "chat.json");
+// === Подключение к MongoDB ===
+const uri = process.env.MONGODB_URI; // в Render добавить переменную окружения
+const client = new MongoClient(uri);
+let db, boards, chats;
 
-// === Функции для сохранения/загрузки ===
-function ensureSaveDir() {
-    if (!fs.existsSync(SAVE_DIR)) fs.mkdirSync(SAVE_DIR);
-}
-
-function saveBoard() {
-    ensureSaveDir();
-    fs.writeFileSync(BOARD_FILE, JSON.stringify(board));
-}
-
-function saveChat() {
-    ensureSaveDir();
-    fs.writeFileSync(CHAT_FILE, JSON.stringify(chat.slice(-100)));
-}
-
-function loadBoard() {
+// === Инициализация базы ===
+async function initDB() {
     try {
-        if (fs.existsSync(BOARD_FILE)) {
-            const data = JSON.parse(fs.readFileSync(BOARD_FILE, "utf8"));
-            if (Array.isArray(data) && data.length === boardH) {
-                board = data;
-                console.log("🎨 Поле загружено из сохранения");
-            }
+        await client.connect();
+        db = client.db("yaplace");
+        boards = db.collection("board");
+        chats = db.collection("chat");
+        console.log("✅ Подключено к MongoDB");
+
+        const existing = await boards.findOne({ _id: "main" });
+        if (!existing) {
+            const blank = Array.from({ length: boardH }, () => Array(boardW).fill("#FFFFFF"));
+            await boards.insertOne({ _id: "main", data: blank });
+            console.log("🎨 Создано новое поле");
         }
+
+        const chatCount = await chats.countDocuments();
+        if (chatCount === 0) console.log("💬 Чат пуст");
     } catch (err) {
-        console.error("Ошибка загрузки board:", err);
+        console.error("❌ Ошибка подключения к MongoDB:", err);
     }
 }
-
-function loadChat() {
-    try {
-        if (fs.existsSync(CHAT_FILE)) {
-            const data = JSON.parse(fs.readFileSync(CHAT_FILE, "utf8"));
-            if (Array.isArray(data)) {
-                chat = data.slice(-100);
-                console.log("💬 Чат загружен из сохранения");
-            }
-        }
-    } catch (err) {
-        console.error("Ошибка загрузки chat:", err);
-    }
-}
+initDB();
 
 // === Игровое поле и чат ===
 let board = Array.from({ length: boardH }, () => Array(boardW).fill("#FFFFFF"));
 let chat = [];
 
-// === Загрузка сохранений ===
-loadBoard();
-loadChat();
+// === Загрузка сохранений из базы ===
+async function loadBoard() {
+    const doc = await boards.findOne({ _id: "main" });
+    if (doc?.data) {
+        board = doc.data;
+        console.log("🎨 Поле загружено из MongoDB");
+    }
+}
+
+async function saveBoard() {
+    await boards.updateOne({ _id: "main" }, { $set: { data: board } });
+}
+
+async function loadChat() {
+    chat = await chats.find().sort({ _id: -1 }).limit(100).toArray();
+    chat.reverse();
+    console.log("💬 Чат загружен из MongoDB");
+}
+
+async function saveChat(msg) {
+    await chats.insertOne(msg);
+    const count = await chats.countDocuments();
+    if (count > 200) {
+        const extra = await chats.find().sort({ _id: 1 }).limit(count - 200).toArray();
+        const ids = extra.map(c => c._id);
+        await chats.deleteMany({ _id: { $in: ids } });
+    }
+}
 
 // === Запрещённые слова ===
 const badWords = [
@@ -105,13 +111,15 @@ app.get("/", (_req, res) =>
 );
 
 // === WebSocket ===
-wss.on("connection", (ws) => {
+wss.on("connection", async (ws) => {
     console.log("✅ Новый игрок подключился");
 
-    // Отправляем начальные данные
+    await loadBoard();
+    await loadChat();
+
     ws.send(JSON.stringify({ type: "init", board, chat }));
 
-    ws.on("message", (message) => {
+    ws.on("message", async (message) => {
         try {
             const data = JSON.parse(message);
 
@@ -137,7 +145,7 @@ wss.on("connection", (ws) => {
                 const { x, y, color, player } = data;
                 if (x >= 0 && y >= 0 && x < boardW && y < boardH) {
                     board[y][x] = color;
-                    saveBoard();
+                    await saveBoard();
                     broadcast({ type: "pixel", x, y, color, player });
                 }
                 return;
@@ -151,7 +159,7 @@ wss.on("connection", (ws) => {
                 };
                 chat.push(msg);
                 if (chat.length > 100) chat.shift();
-                saveChat();
+                await saveChat(msg);
                 broadcast({ type: "chat", player: msg.player, text: msg.text });
                 return;
             }
