@@ -216,7 +216,6 @@ canvas.addEventListener("touchend", () => {
     lastPinchDist = null;
 });
 
-
 // === WebSocket ===
 const socket = new WebSocket("wss://yaplace-server.onrender.com");
 
