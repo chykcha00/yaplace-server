@@ -32,10 +32,19 @@ off.height = boardH;
 offCtx.fillStyle = "#ffffff";
 offCtx.fillRect(0, 0, boardW, boardH);
 
-// === Камера ===
+// === Камера и зум ===
 let scale = 4;
 let offsetX = 0;
 let offsetY = 0;
+
+let targetScale = scale;
+let targetOffsetX = offsetX;
+let targetOffsetY = offsetY;
+
+let isPanning = false;
+let panStart = { x: 0, y: 0 };
+let viewStart = { x: 0, y: 0 };
+let lastPinchDist = null;
 
 // === Палитра ===
 const paletteDiv = document.getElementById('palette');
@@ -69,13 +78,9 @@ paletteColors.forEach(color => {
     }
 });
 
-// === Прокрутка палитры ===
 paletteDiv.addEventListener("wheel", (e) => {
     e.preventDefault();
-    paletteDiv.scrollBy({
-        left: e.deltaY > 0 ? 180 : -180,
-        behavior: "smooth"
-    });
+    paletteDiv.scrollBy({ left: e.deltaY > 0 ? 180 : -180, behavior: "smooth" });
 });
 
 // === Счётчик пикселей ===
@@ -105,33 +110,15 @@ function draw() {
 window.addEventListener('resize', fitCanvasToScreen);
 fitCanvasToScreen();
 
-// === Камера и зум (исправленная плавность) ===
-let isPanning = false;
-let panStart = { x: 0, y: 0 };
-let viewStart = { x: 0, y: 0 };
-let lastPinchDist = null;
-
-// реальные значения
-let scale = 4;
-let offsetX = 0;
-let offsetY = 0;
-
-// целевые значения (для плавной анимации)
-let targetScale = scale;
-let targetOffsetX = offsetX;
-let targetOffsetY = offsetY;
-
-// === Главный цикл камеры ===
+// === Главный цикл камеры (плавный зум и пан) ===
 function updateCamera() {
-    // Плавное приближение к целевым значениям
     scale += (targetScale - scale) * 0.2;
     offsetX += (targetOffsetX - offsetX) * 0.2;
     offsetY += (targetOffsetY - offsetY) * 0.2;
-
     draw();
     requestAnimationFrame(updateCamera);
 }
-updateCamera(); // запускаем один раз
+updateCamera();
 
 // === Панорамирование мышью ===
 canvas.addEventListener('mousedown', e => {
@@ -157,7 +144,6 @@ canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener("wheel", e => {
     e.preventDefault();
     if (isPanning) return;
-
     const zoomFactor = e.deltaY < 0 ? 1.2 : 0.8;
     const rect = canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
@@ -165,13 +151,12 @@ canvas.addEventListener("wheel", e => {
     const cy = (e.clientY - rect.top) * dpr;
     const worldX = (cx - targetOffsetX) / targetScale;
     const worldY = (cy - targetOffsetY) / targetScale;
-
     targetScale = Math.min(Math.max(targetScale * zoomFactor, 1), 64);
     targetOffsetX = cx - worldX * targetScale;
     targetOffsetY = cy - worldY * targetScale;
 }, { passive: false });
 
-// === Сенсорные устройства ===
+// === Сенсорные устройства (тач) ===
 canvas.addEventListener("touchstart", e => {
     if (e.touches.length === 1) {
         isPanning = true;
@@ -194,7 +179,6 @@ canvas.addEventListener("touchmove", e => {
         const dx = e.touches[1].clientX - e.touches[0].clientX;
         const dy = e.touches[1].clientY - e.touches[0].clientY;
         const dist = Math.sqrt(dx * dx + dy * dy);
-
         if (lastPinchDist) {
             const zoomFactor = dist / lastPinchDist;
             const rect = canvas.getBoundingClientRect();
@@ -202,7 +186,6 @@ canvas.addEventListener("touchmove", e => {
             const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
             const worldX = (cx - targetOffsetX) / targetScale;
             const worldY = (cy - targetOffsetY) / targetScale;
-
             targetScale = Math.min(Math.max(targetScale * zoomFactor, 1), 64);
             targetOffsetX = cx - worldX * targetScale;
             targetOffsetY = cy - worldY * targetScale;
@@ -215,7 +198,6 @@ canvas.addEventListener("touchend", () => {
     isPanning = false;
     lastPinchDist = null;
 });
-
 // === WebSocket ===
 const socket = new WebSocket("wss://yaplace-server.onrender.com");
 
