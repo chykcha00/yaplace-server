@@ -88,6 +88,38 @@ const pixelCounter = document.getElementById('pixels');
 let pixelCount = 30;
 pixelCounter.textContent = pixelCount;
 
+// === Кнопка для бонусных пикселей ===
+const adButton = document.getElementById('watch-ad');
+
+adButton.addEventListener('click', () => {
+    if (typeof ysdk === 'undefined' || !ysdk.adv) {
+        alert("Реклама недоступна");
+        return;
+    }
+
+    ysdk.adv.showRewardedVideo({
+        callbacks: {
+            onOpen: () => {
+                console.log('Видеореклама открыта');
+            },
+            onRewarded: () => {
+                console.log('Награда за просмотр получена!');
+                pixelCount += 5; // добавляем 5 пикселей
+                pixelCounter.textContent = pixelCount;
+                alert("Вы получили 5 дополнительных пикселей!");
+            },
+            onClose: () => {
+                console.log('Видеореклама закрыта');
+            },
+            onError: (e) => {
+                console.log('Ошибка при показе рекламы:', e);
+                alert("Не удалось показать рекламу. Попробуйте позже.");
+            },
+        }
+    });
+});
+
+
 // === Отрисовка ===
 function fitCanvasToScreen() {
     const dpr = window.devicePixelRatio || 1;

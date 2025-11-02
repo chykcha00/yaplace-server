@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
+    <script src="https://yastatic.net/games-sdk/v2/sdk.min.js"></script>
     <meta charset="UTF-8">
     <title>Yaplace Game</title>
     <link rel="stylesheet" href="style.css">
@@ -22,6 +23,7 @@
         <div id="pixel-counter">
             Пиксели: <span id="pixels">100</span>
             <button id="collect-pixels">+10</button>
+            <button id="watch-ad">🎁 +5 за просмотр рекламы</button> <!-- кнопка рекламы -->
             <span id="collect-timer"></span>
         </div>
         <button id="open-gallery">🖼 Рисунки недели</button>
@@ -62,5 +64,35 @@
     </div>
 
     <script src="main.js" defer></script>
+
+    <script>
+        // === Пример подключения кнопки рекламы ===
+        const adButton = document.getElementById('watch-ad');
+        const pixelCounter = document.getElementById('pixels');
+        let pixelCount = parseInt(pixelCounter.textContent);
+
+        adButton.addEventListener('click', () => {
+            if (typeof ysdk === 'undefined' || !ysdk.adv) {
+                alert("Реклама недоступна");
+                return;
+            }
+
+            ysdk.adv.showRewardedVideo({
+                callbacks: {
+                    onOpen: () => console.log('Видео открыто'),
+                    onRewarded: () => {
+                        pixelCount += 5;
+                        pixelCounter.textContent = pixelCount;
+                        alert("Вы получили +5 пикселей!");
+                    },
+                    onClose: () => console.log('Видео закрыто'),
+                    onError: (e) => {
+                        console.log('Ошибка рекламы:', e);
+                        alert("Не удалось показать рекламу. Попробуйте позже.");
+                    }
+                }
+            });
+        });
+    </script>
 </body>
 </html>
