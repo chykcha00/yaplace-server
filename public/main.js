@@ -84,40 +84,63 @@ paletteDiv.addEventListener("wheel", (e) => {
 });
 
 // === Счётчик пикселей ===
+// === Счётчик пикселей с сохранением ===
 const pixelCounter = document.getElementById('pixels');
-let pixelCount = 30;
+let pixelCount = parseInt(localStorage.getItem("playerPixels")) || 30;
 pixelCounter.textContent = pixelCount;
+
+function updatePixels(amount) {
+    pixelCount += amount;
+    if (pixelCount < 0) pixelCount = 0;
+    pixelCounter.textContent = pixelCount;
+    localStorage.setItem("playerPixels", pixelCount);
+}
+
 
 // === Кнопка для бонусных пикселей ===
 const adButton = document.getElementById('watch-ad');
 
-adButton.addEventListener('click', () => {
-    if (typeof ysdk === 'undefined' || !ysdk.adv) {
-        alert("Реклама недоступна");
+adButton.addEventListener('click', async () => {
+    if (!window.ysdk) {
+        alert("Инициализация SDK ещё не завершена. Попробуйте чуть позже.");
         return;
     }
 
-    ysdk.adv.showRewardedVideo({
-        callbacks: {
-            onOpen: () => {
-                console.log('Видеореклама открыта');
-            },
-            onRewarded: () => {
-                console.log('Награда за просмотр получена!');
-                pixelCount += 5; // добавляем 5 пикселей
-                pixelCounter.textContent = pixelCount;
-                alert("Вы получили 5 дополнительных пикселей!");
-            },
-            onClose: () => {
-                console.log('Видеореклама закрыта');
-            },
-            onError: (e) => {
-                console.log('Ошибка при показе рекламы:', e);
-                alert("Не удалось показать рекламу. Попробуйте позже.");
-            },
-        }
-    });
+    try {
+        await ysdk.adv.showRewardedVideo({
+            callbacks: {
+                onOpen: () => console.log('🎬 Видео открыто'),
+                onRewarded: () => {
+                    updatePixels(5);
+                    alert("🎁 Вы получили +5 пикселей!");
+                },
+                onClose: () => console.log('Видео закрыто'),
+                onError: (e) => {
+                    console.warn('Ошибка рекламы:', e);
+                    alert("Реклама недоступна. Попробуйте позже.");
+                }
+            }
+        });
+    } catch (e) {
+        console.error("Ошибка при вызове рекламы:", e);
+    }
 });
+
+const openGalleryBtn = document.getElementById('open-gallery');
+const galleryModal = document.getElementById('gallery-modal');
+const closeGalleryBtn = document.getElementById('close-gallery');
+
+openGalleryBtn.addEventListener('click', () => {
+    galleryModal.classList.remove('hidden'); // Показываем модалку
+});
+
+closeGalleryBtn.addEventListener('click', () => {
+    galleryModal.classList.add('hidden'); // Скрываем модалку
+});
+
+
+
+
 
 
 // === Отрисовка ===
@@ -279,6 +302,65 @@ socket.addEventListener("message", event => {
         chatBox.scrollTop = chatBox.scrollHeight;
         return;
     }
+
+    // === Пришли рисунки недели от сервера ===
+    if (data.type === "galleryOfWeek") {
+        const gallery = document.getElementById("gallery");
+        if (!gallery) return;
+
+        gallery.innerHTML = ""; // очищаем перед обновлением
+
+        data.items.forEach(item => {
+            const div = document.createElement("div");
+            div.classList.add("gallery-item");
+
+            const img = document.createElement("img");
+            img.src = item.image;
+            img.alt = item.title;
+
+            const caption = document.createElement("p");
+            caption.textContent = item.title;
+
+            div.appendChild(img);
+            div.appendChild(caption);
+            gallery.appendChild(div);
+        });
+
+        console.log(`🖼 Получено ${data.items.length} рисунков недели`);
+    }
+
+
+    // === Новое: добавление рисунка недели ===
+    if (data.type === "newGalleryItem") {
+        const gallery = document.getElementById("gallery");
+        if (!gallery) return;
+
+        const item = document.createElement("div");
+        item.classList.add("gallery-item");
+
+        const img = document.createElement("img");
+        img.src = data.image;
+        img.alt = data.title || "Без названия";
+
+        const caption = document.createElement("p");
+        caption.textContent = data.title || "Без названия";
+
+        item.appendChild(img);
+        item.appendChild(caption);
+        gallery.appendChild(item);
+
+        // Легкая анимация появления
+        item.style.opacity = "0";
+        item.style.transform = "scale(0.9)";
+        setTimeout(() => {
+            item.style.transition = "all 0.3s ease";
+            item.style.opacity = "1";
+            item.style.transform = "scale(1)";
+        }, 50);
+
+        console.log(`🖼 Добавлен новый рисунок: ${data.title}`);
+    }
+
 });
 
 socket.addEventListener("open", () => {
@@ -306,8 +388,7 @@ canvas.addEventListener('click', e => {
             color: currentColor,
             player: playerName
         }));
-        pixelCount--;
-        pixelCounter.textContent = pixelCount;
+        updatePixels(-1);
     }
 });
 
@@ -341,9 +422,31 @@ startButton.addEventListener('click', () => {
             player: playerName
         }));
     } else {
+        // Соединение не установлено — показываем alert
         alert("Соединение с сервером ещё не установлено. Попробуйте через пару секунд.");
+
+        // Проверяем, есть ли уже кнопка, чтобы не создавать дубликат
+        if (!document.getElementById('reload-server-btn')) {
+            const reloadButton = document.createElement('button');
+            reloadButton.textContent = 'Перезагрузить страницу';
+            reloadButton.id = 'reload-server-btn'; // уникальный id
+            reloadButton.style.padding = '10px 20px';
+            reloadButton.style.fontSize = '16px';
+            reloadButton.style.cursor = 'pointer';
+            reloadButton.style.marginTop = '10px';
+
+            // Добавляем кнопку в блок главного меню
+            const menuBox = mainMenu.querySelector('.menu-box');
+            menuBox.appendChild(reloadButton);
+
+            // Обработчик клика — перезагрузка страницы
+            reloadButton.addEventListener('click', () => {
+                location.reload();
+            });
+        }
     }
 });
+
 
 // === Чат ===
 const chatInput = document.getElementById("chat-input");
@@ -365,3 +468,52 @@ sendChatBtn?.addEventListener("click", sendChat);
 chatInput?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") sendChat();
 });
+
+setInterval(() => {
+    if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: "ping" }));
+    }
+}, 25000);
+
+// === Бонус за время (+10 пикселей) ===
+const collectBtn = document.getElementById('collect-pixels');
+const collectTimer = document.getElementById('collect-timer');
+
+// Интервал в миллисекундах (например, 5 минут)
+const COLLECT_INTERVAL = 5 * 60 * 1000;
+
+// Загружаем время последнего сбора из localStorage
+let lastCollectTime = parseInt(localStorage.getItem('lastCollectTime')) || 0;
+
+// Проверяем, можно ли уже собирать
+function updateCollectButton() {
+    const now = Date.now();
+    const timeLeft = COLLECT_INTERVAL - (now - lastCollectTime);
+
+    if (timeLeft <= 0) {
+        collectBtn.disabled = false;
+        collectTimer.textContent = "Готово!";
+    } else {
+        collectBtn.disabled = true;
+        const minutes = Math.floor(timeLeft / 60000);
+        const seconds = Math.floor((timeLeft % 60000) / 1000);
+        collectTimer.textContent = `Через ${minutes}:${seconds.toString().padStart(2, "0")}`;
+    }
+}
+
+// Клик по кнопке
+collectBtn.addEventListener('click', () => {
+    const now = Date.now();
+    const timeLeft = COLLECT_INTERVAL - (now - lastCollectTime);
+    if (timeLeft > 0) return;
+
+    updatePixels(10); // добавляем пиксели
+    lastCollectTime = now;
+    localStorage.setItem('lastCollectTime', lastCollectTime);
+    updateCollectButton();
+});
+
+// Проверяем кнопку каждую секунду
+setInterval(updateCollectButton, 1000);
+updateCollectButton();
+

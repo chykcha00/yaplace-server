@@ -16,6 +16,11 @@ const uri = process.env.MONGODB_URI; // в Render добавить переме�
 const client = new MongoClient(uri);
 let db, boards, chats;
 
+// === Галерея недели ===
+let galleryOfWeek = [];
+
+
+
 // === Инициализация базы ===
 async function initDB() {
     try {
@@ -110,6 +115,31 @@ app.get("/", (_req, res) =>
     res.sendFile(path.join(__dirname, "public", "index.html"))
 );
 
+// 🔄 Эндпоинт для обновления галереи недели
+app.post("/update-gallery", (req, res) => {
+    const { items } = req.body;
+    if (!Array.isArray(items)) {
+        return res.status(400).json({ error: "items должен быть массивом" });
+    }
+
+    // Обновляем глобальную переменную
+    galleryOfWeek = items;
+    console.log("✅ Галерея недели обновлена через API");
+
+    // Рассылаем обновление всем подключённым клиентам
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({
+                type: "galleryOfWeek",
+                items: galleryOfWeek
+            }));
+        }
+    });
+
+    res.json({ success: true });
+});
+
+
 // === WebSocket ===
 wss.on("connection", async (ws) => {
     console.log("✅ Новый игрок подключился");
@@ -118,6 +148,12 @@ wss.on("connection", async (ws) => {
     await loadChat();
 
     ws.send(JSON.stringify({ type: "init", board, chat }));
+    // Отправляем текущие рисунки недели
+    ws.send(JSON.stringify({
+        type: "galleryOfWeek",
+        items: galleryOfWeek
+    }));
+
 
     ws.on("message", async (message) => {
         try {

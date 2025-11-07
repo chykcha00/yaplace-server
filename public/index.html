@@ -1,10 +1,60 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <script src="https://yastatic.net/games-sdk/v2/sdk.min.js"></script>
     <meta charset="UTF-8">
-    <title>Yaplace Game</title>
+    <title>🎨 Yaplace Game</title>
     <link rel="stylesheet" href="style.css">
+
+    <!-- Подключаем SDK Яндекс.Игр ЛОКАЛЬНО -->
+    <!-- SDK.js должен лежать рядом с index.html -->
+    <script src="/sdk.js"></script>
+
+    <script>
+        // === Инициализация SDK ===
+        let ysdk = null;
+
+        document.addEventListener("DOMContentLoaded", () => {
+            if (typeof YaGames === "undefined") {
+                console.error("❌ SDK не найден. Проверь, что файл sdk.js лежит рядом с index.html");
+                return;
+            }
+
+            YaGames.init()
+                .then(sdk => {
+                    ysdk = sdk;
+                    console.log("✅ Yandex SDK инициализирован");
+
+                    // Проверим наличие рекламы
+                    if (ysdk.adv) {
+                        console.log("🎬 Модуль рекламы готов");
+                    } else {
+                        console.warn("⚠️ Модуль рекламы недоступен");
+                    }
+
+                    // Обработчик для кнопки рекламы
+                    const adButton = document.getElementById("watch-ad");
+                    if (adButton) {
+                        adButton.addEventListener("click", () => {
+                            ysdk.adv.showRewardedVideo({
+                                callbacks: {
+                                    onOpen: () => console.log("▶️ Реклама запущена"),
+                                    onRewarded: () => {
+                                        console.log("🎁 Игрок получил награду");
+                                        const pixels = document.getElementById("pixels");
+                                        pixels.textContent = parseInt(pixels.textContent) + 5;
+                                    },
+                                    onClose: () => console.log("⏹ Реклама закрыта"),
+                                    onError: (err) => console.warn("⚠️ Ошибка рекламы:", err)
+                                }
+                            });
+                        });
+                    }
+                })
+                .catch(err => {
+                    console.warn("⚠️ Ошибка инициализации Yandex SDK:", err);
+                });
+        });
+    </script>
 </head>
 <body>
     <!-- Главное меню -->
@@ -23,7 +73,7 @@
         <div id="pixel-counter">
             Пиксели: <span id="pixels">100</span>
             <button id="collect-pixels">+10</button>
-            <button id="watch-ad">🎁 +5 за просмотр рекламы</button> <!-- кнопка рекламы -->
+            <button id="watch-ad">🎁 +5 за рекламу</button>
             <span id="collect-timer"></span>
         </div>
         <button id="open-gallery">🖼 Рисунки недели</button>
@@ -35,12 +85,8 @@
         <!-- Sidebar с чатом -->
         <div id="sidebar">
             <h2>Чат</h2>
-
-            <!-- Контейнер чата -->
             <div id="chat-container">
                 <div id="chat-global" class="chat-box"></div>
-
-                <!-- Поле ввода -->
                 <div id="chat-controls">
                     <input type="text" id="chat-input" placeholder="Введите сообщение">
                     <button id="send-chat">Отправить</button>
@@ -63,36 +109,7 @@
         </div>
     </div>
 
+    <!-- Основной код игры -->
     <script src="main.js" defer></script>
-
-    <script>
-        // === Пример подключения кнопки рекламы ===
-        const adButton = document.getElementById('watch-ad');
-        const pixelCounter = document.getElementById('pixels');
-        let pixelCount = parseInt(pixelCounter.textContent);
-
-        adButton.addEventListener('click', () => {
-            if (typeof ysdk === 'undefined' || !ysdk.adv) {
-                alert("Реклама недоступна");
-                return;
-            }
-
-            ysdk.adv.showRewardedVideo({
-                callbacks: {
-                    onOpen: () => console.log('Видео открыто'),
-                    onRewarded: () => {
-                        pixelCount += 5;
-                        pixelCounter.textContent = pixelCount;
-                        alert("Вы получили +5 пикселей!");
-                    },
-                    onClose: () => console.log('Видео закрыто'),
-                    onError: (e) => {
-                        console.log('Ошибка рекламы:', e);
-                        alert("Не удалось показать рекламу. Попробуйте позже.");
-                    }
-                }
-            });
-        });
-    </script>
 </body>
 </html>
