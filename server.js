@@ -28,16 +28,19 @@ function loadGallery() {
         console.log("📁 Создана папка public/gallery");
     }
 
+    const BASE_URL = process.env.BASE_URL || "https://yaplace-server.onrender.com";
+
     const files = fs.readdirSync(galleryDir)
         .filter(f => /\.(png|jpg|jpeg|gif|webp)$/i.test(f))
         .map(f => ({
-            title: path.parse(f).name, // Имя файла без расширения
-            image: `/gallery/${f}`     // Путь для клиента
+            title: path.parse(f).name,
+            image: `${BASE_URL}/gallery/${f}`  // 🔥 абсолютный URL
         }));
 
-    galleryOfWeek = files;
     console.log(`🖼 Найдено ${files.length} изображений в галерее`);
+    galleryOfWeek = files;
 }
+
 
 // Загружаем при старте
 loadGallery();
