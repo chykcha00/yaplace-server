@@ -330,36 +330,6 @@ socket.addEventListener("message", event => {
     }
 
 
-    // === Новое: добавление рисунка недели ===
-    if (data.type === "newGalleryItem") {
-        const gallery = document.getElementById("gallery");
-        if (!gallery) return;
-
-        const item = document.createElement("div");
-        item.classList.add("gallery-item");
-
-        const img = document.createElement("img");
-        img.src = data.image;
-        img.alt = data.title || "Без названия";
-
-        const caption = document.createElement("p");
-        caption.textContent = data.title || "Без названия";
-
-        item.appendChild(img);
-        item.appendChild(caption);
-        gallery.appendChild(item);
-
-        // Легкая анимация появления
-        item.style.opacity = "0";
-        item.style.transform = "scale(0.9)";
-        setTimeout(() => {
-            item.style.transition = "all 0.3s ease";
-            item.style.opacity = "1";
-            item.style.transform = "scale(1)";
-        }, 50);
-
-        console.log(`🖼 Добавлен новый рисунок: ${data.title}`);
-    }
 
 });
 

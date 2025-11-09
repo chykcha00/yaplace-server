@@ -2,6 +2,7 @@
 const http = require("http");
 const WebSocket = require("ws");
 const path = require("path");
+const fs = require("fs");
 const { MongoClient } = require("mongodb");
 
 // === Настройки ===
@@ -12,14 +13,40 @@ const boardW = 128;
 const boardH = 128;
 
 // === Подключение к MongoDB ===
-const uri = process.env.MONGODB_URI; // в Render добавить переменную окружения
+const uri = process.env.MONGODB_URI; // В Render добавить переменную окружения
 const client = new MongoClient(uri);
 let db, boards, chats;
 
-// === Галерея недели ===
+// === Галерея недели (автоматическая загрузка) ===
+const galleryDir = path.join(__dirname, "public", "gallery");
 let galleryOfWeek = [];
 
+// 📁 Загружаем все картинки из public/gallery
+function loadGallery() {
+    if (!fs.existsSync(galleryDir)) {
+        fs.mkdirSync(galleryDir, { recursive: true });
+        console.log("📁 Создана папка public/gallery");
+    }
 
+    const files = fs.readdirSync(galleryDir)
+        .filter(f => /\.(png|jpg|jpeg|gif|webp)$/i.test(f))
+        .map(f => ({
+            title: path.parse(f).name, // Имя файла без расширения
+            image: `/gallery/${f}`     // Путь для клиента
+        }));
+
+    galleryOfWeek = files;
+    console.log(`🖼 Найдено ${files.length} изображений в галерее`);
+}
+
+// Загружаем при старте
+loadGallery();
+
+// Отдаём статические файлы галереи
+app.use("/gallery", express.static(galleryDir));
+
+// Эндпоинт для ручной проверки галереи
+app.get("/api/gallery", (_req, res) => res.json(galleryOfWeek));
 
 // === Инициализация базы ===
 async function initDB() {
@@ -49,7 +76,7 @@ initDB();
 let board = Array.from({ length: boardH }, () => Array(boardW).fill("#FFFFFF"));
 let chat = [];
 
-// === Загрузка сохранений из базы ===
+// === Загрузка и сохранение данных ===
 async function loadBoard() {
     const doc = await boards.findOne({ _id: "main" });
     if (doc?.data) {
@@ -78,7 +105,7 @@ async function saveChat(msg) {
     }
 }
 
-// === Запрещённые слова ===
+// === Запрещённые слова и фильтрация ===
 const badWords = [
     "хуй", "хуи", "хую", "хуем", "хуя", "хуёв", "хуев", "нахуя",
     "пизда", "пиздец", "пизд", "пизжу", "пиздишь", "пидр", "пидор", "пидар",
@@ -92,7 +119,6 @@ const badWords = [
     "putin", "путин", "zelensky", "зеленский", "trump", "трамп", "biden", "байден", "navalny", "навальный"
 ];
 
-// === Фильтрация текста ===
 function filterMessage(text) {
     let filtered = text;
     for (const word of badWords) {
@@ -102,7 +128,6 @@ function filterMessage(text) {
     return filtered;
 }
 
-// === Проверка имени ===
 function isNameAllowed(name) {
     if (!name) return false;
     const lowered = name.toLowerCase();
@@ -115,31 +140,6 @@ app.get("/", (_req, res) =>
     res.sendFile(path.join(__dirname, "public", "index.html"))
 );
 
-// 🔄 Эндпоинт для обновления галереи недели
-app.post("/update-gallery", (req, res) => {
-    const { items } = req.body;
-    if (!Array.isArray(items)) {
-        return res.status(400).json({ error: "items должен быть массивом" });
-    }
-
-    // Обновляем глобальную переменную
-    galleryOfWeek = items;
-    console.log("✅ Галерея недели обновлена через API");
-
-    // Рассылаем обновление всем подключённым клиентам
-    wss.clients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({
-                type: "galleryOfWeek",
-                items: galleryOfWeek
-            }));
-        }
-    });
-
-    res.json({ success: true });
-});
-
-
 // === WebSocket ===
 wss.on("connection", async (ws) => {
     console.log("✅ Новый игрок подключился");
@@ -149,17 +149,12 @@ wss.on("connection", async (ws) => {
 
     ws.send(JSON.stringify({ type: "init", board, chat }));
     // Отправляем текущие рисунки недели
-    ws.send(JSON.stringify({
-        type: "galleryOfWeek",
-        items: galleryOfWeek
-    }));
-
+    ws.send(JSON.stringify({ type: "galleryOfWeek", items: galleryOfWeek }));
 
     ws.on("message", async (message) => {
         try {
             const data = JSON.parse(message);
 
-            // === Установка имени ===
             if (data.type === "setName") {
                 const name = (data.player || "").trim();
                 if (!isNameAllowed(name)) {
@@ -176,7 +171,6 @@ wss.on("connection", async (ws) => {
                 return;
             }
 
-            // === Рисование пикселя ===
             if (data.type === "setPixel") {
                 const { x, y, color, player } = data;
                 if (x >= 0 && y >= 0 && x < boardW && y < boardH) {
@@ -187,7 +181,6 @@ wss.on("connection", async (ws) => {
                 return;
             }
 
-            // === Сообщение в чат ===
             if (data.type === "chat") {
                 const msg = {
                     player: data.player || "Гость",
