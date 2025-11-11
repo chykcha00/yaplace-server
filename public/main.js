@@ -88,12 +88,22 @@ paletteDiv.addEventListener("wheel", (e) => {
 const pixelCounter = document.getElementById('pixels');
 let pixelCount = parseInt(localStorage.getItem("playerPixels")) || 30;
 pixelCounter.textContent = pixelCount;
+updatePixels(0);
 
 function updatePixels(amount) {
     pixelCount += amount;
     if (pixelCount < 0) pixelCount = 0;
     pixelCounter.textContent = pixelCount;
     localStorage.setItem("playerPixels", pixelCount);
+    // === Синхронизация пикселей между вкладками ===
+    window.addEventListener("storage", (event) => {
+        if (event.key === "playerPixels") {
+            const newValue = parseInt(event.newValue) || 0;
+            pixelCount = newValue;
+            pixelCounter.textContent = pixelCount;
+            console.log("🔄 Синхронизировано количество пикселей:", newValue);
+        }
+    });
 }
 
 
