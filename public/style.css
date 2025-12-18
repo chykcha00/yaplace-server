@@ -1,11 +1,46 @@
-﻿body {
+﻿/* ===== ГЛОБАЛЬНОЕ ОТКЛЮЧЕНИЕ ВЫДЕЛЕНИЯ И КОНТЕКСТНОГО МЕНЮ ===== */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    /* 🔥 КРИТИЧНО: manipulation РАЗРЕШАЕТ скролл на iOS! */
+    touch-action: none;
+}
+
+::selection,
+::-moz-selection {
+    background: transparent;
+    color: inherit;
+}
+
+html, body {
     margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden; /* 🔥 запрет скролла */
+    overscroll-behavior: none; /* отключает "резинку" */
+    -webkit-tap-highlight-color: transparent;
+    /* 🔥 фиксируем viewport на iOS */
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+}
+
+body {
     font-family: 'Inter', sans-serif;
     background: #1e1e1e;
     color: #fff;
     display: flex;
     flex-direction: column;
-    height: 100vh;
+    /* height: 100vh; — не нужно, position: fixed уже фиксирует */
 }
 
 /* ===== Главное меню ===== */
@@ -106,7 +141,7 @@
     display: flex;
     flex-direction: column;
     flex: 1;
-    min-height: 0; /* важно для flex-scroll */
+    min-height: 0;
 }
 
 #chat-global {
@@ -125,7 +160,7 @@
     display: flex;
     gap: 6px;
     margin-top: 6px;
-    align-items: center; /* выравниваем по центру */
+    align-items: center;
 }
 
 #chat-input {
@@ -137,20 +172,20 @@
     background: #1a1a1a;
     color: #fff;
     font-size: 14px;
-    min-width: 0; /* важно, чтобы input сжимался */
+    min-width: 0;
 }
 
 #send-chat {
-    flex-shrink: 0; /* не даём кнопке сжиматься */
-    padding: 4px 8px; /* уменьшенные отступы */
-    font-size: 13px; /* шрифт чуть меньше */
+    flex-shrink: 0;
+    padding: 4px 8px;
+    font-size: 13px;
     border: none;
     border-radius: 6px;
     background: #4caf50;
     color: #fff;
     cursor: pointer;
-    white-space: nowrap; /* текст всегда в одну строку */
-    height: auto; /* подстраивается под содержимое */
+    white-space: nowrap;
+    height: auto;
     line-height: 1.2;
 }
 
@@ -158,20 +193,16 @@
         background: #66bb6a;
     }
 
-
-
-
 #footer {
     display: flex;
     align-items: center;
-    justify-content: flex-start; /* только палитра слева */
+    justify-content: flex-start;
     padding: 10px 20px;
     background: rgba(40,40,40,0.9);
     backdrop-filter: blur(5px);
-    position: relative; /* для абсолютного позиционирования кнопки */
+    position: relative;
 }
 
-/* Кнопка сброса в углу */
 #reset-view {
     position: absolute;
     right: 20px;
@@ -191,7 +222,6 @@
         background: #666;
         opacity: 1;
     }
-
 
 #palette {
     display: flex;
@@ -227,19 +257,15 @@
         transition: border-color 0.2s, transform 0.2s;
     }
 
-        /* Подсветка при наведении */
         #palette div:hover {
             border-color: #fff;
             transform: scale(1.1);
         }
 
-        /* Активный выбранный цвет */
         #palette div.active {
             border-color: #4caf50;
             box-shadow: 0 0 6px #4caf50;
         }
-
-
 
 /* ===== Галерея ===== */
 #open-gallery {
@@ -287,38 +313,19 @@
     gap: 12px;
 }
 
-.gallery-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 8px;
-}
-
-.gallery-actions {
-    display: flex;
-    gap: 8px;
-}
-
-#add-snapshot, #close-gallery {
-    padding: 6px 10px;
-    border: none;
-    border-radius: 6px;
-    background: #444;
-    color: #fff;
-    cursor: pointer;
-}
-
-    #add-snapshot:hover, #close-gallery:hover {
-        background: #666;
-    }
-
 #gallery {
     display: grid;
     grid-template-columns: repeat(auto-fill, 150px);
     gap: 10px;
     overflow: auto;
     padding-right: 6px;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
 }
+
+    #gallery::-webkit-scrollbar {
+        display: none;
+    }
 
     #gallery img {
         width: 150px;
@@ -328,7 +335,32 @@
         border: 2px solid #444;
     }
 
-/* ===== Кнопка сбора пикселей ===== */
+.gallery-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: #2a2a2a;
+    border-radius: 10px;
+    padding: 8px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    transition: all 0.3s ease;
+}
+
+    .gallery-item img {
+        width: 140px;
+        height: 140px;
+        object-fit: cover;
+        border-radius: 8px;
+        margin-bottom: 6px;
+    }
+
+    .gallery-item p {
+        margin: 0;
+        font-size: 13px;
+        color: #ccc;
+        text-align: center;
+    }
+
 #collect-pixels {
     margin-left: 10px;
     padding: 4px 8px;
@@ -350,7 +382,7 @@
     color: #aaa;
     font-size: 14px;
 }
-/* ===== Адаптация под телефоны ===== */
+
 @media (max-width: 768px) {
     #header {
         padding: 5px 10px;
@@ -380,29 +412,31 @@
         padding: 3px 6px;
     }
 }
-/* ===== Новое: элементы галереи ===== */
-.gallery-item {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    background: #2a2a2a;
-    border-radius: 10px;
-    padding: 8px;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
-    transition: all 0.3s ease;
+
+/* ===== Toast-уведомления ===== */
+.toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(220, 53, 69, 0.95);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    z-index: 30000;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    text-align: center;
+    max-width: 80%;
+    pointer-events: none;
 }
 
-    .gallery-item img {
-        width: 140px;
-        height: 140px;
-        object-fit: cover;
-        border-radius: 8px;
-        margin-bottom: 6px;
+    .toast.show {
+        opacity: 1;
     }
 
-    .gallery-item p {
+    .toast p {
         margin: 0;
-        font-size: 13px;
-        color: #ccc;
-        text-align: center;
     }

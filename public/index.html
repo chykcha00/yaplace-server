@@ -3,61 +3,101 @@
 <head>
     <meta charset="UTF-8">
     <title>🎨 Yaplace Game</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, viewport-fit=cover">
+
     <link rel="stylesheet" href="style.css">
 
     <!-- Подключаем SDK Яндекс.Игр ЛОКАЛЬНО -->
-    <!-- SDK.js должен лежать рядом с index.html -->
     <script src="/sdk.js"></script>
 
+    <!-- Стиль загрузочного экрана -->
+    <style>
+        #loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            z-index: 999999;
+        }
+    </style>
+
     <script>
-        // === Инициализация SDK ===
         let ysdk = null;
+        let userLang = "ru";
 
         document.addEventListener("DOMContentLoaded", () => {
             if (typeof YaGames === "undefined") {
                 console.error("❌ SDK не найден. Проверь, что файл sdk.js лежит рядом с index.html");
+                window.ysdk = null;
+                window.userLang = userLang;
+                // Убираем загрузку, если SDK недоступен
+                document.getElementById('loading-screen')?.remove();
                 return;
             }
 
             YaGames.init()
                 .then(sdk => {
                     ysdk = sdk;
-                    console.log("✅ Yandex SDK инициализирован");
+                    window.ysdk = sdk;
+                    userLang = sdk.environment?.i18n?.lang || "ru";
+                    window.userLang = userLang;
+                    console.log("✅ Yandex SDK инициализирован, язык:", userLang);
 
-                    // Проверим наличие рекламы
+                    // 🔥 ОСТАВЛЯЕМ ВЫЗОВ GAMEREADY ТАМ ЖЕ, ГДЕ ОН БЫЛ
+                    if (sdk.features?.LoadingAPI?.ready) {
+                        sdk.features.LoadingAPI.ready();
+                        console.log("✅ LoadingAPI.ready() вызван");
+                    }
+
+                    // ✅ УБИРАЕМ ЗАГРУЗОЧНЫЙ ЭКРАН — БОЛЬШЕ НИЧЕГО НЕ МЕНЯЕМ
+                    document.getElementById('loading-screen')?.remove();
+
                     if (ysdk.adv) {
                         console.log("🎬 Модуль рекламы готов");
                     } else {
                         console.warn("⚠️ Модуль рекламы недоступен");
                     }
 
-                    // Обработчик для кнопки рекламы
                     const adButton = document.getElementById("watch-ad");
                     if (adButton) {
                         adButton.addEventListener("click", () => {
-                            ysdk.adv.showRewardedVideo({
-                                callbacks: {
-                                    onOpen: () => console.log("▶️ Реклама запущена"),
-                                    onRewarded: () => {
-                                        console.log("🎁 Игрок получил награду");
-                                        const pixels = document.getElementById("pixels");
-                                        pixels.textContent = parseInt(pixels.textContent) + 5;
-                                    },
-                                    onClose: () => console.log("⏹ Реклама закрыта"),
-                                    onError: (err) => console.warn("⚠️ Ошибка рекламы:", err)
-                                }
-                            });
+                            if (ysdk.adv) {
+                                ysdk.adv.showRewardedVideo({
+                                    callbacks: {
+                                        onOpen: () => console.log("▶️ Реклама запущена"),
+                                        onRewarded: () => {
+                                            console.log("🎁 Игрок получил награду");
+                                            if (window.updatePixels) window.updatePixels(5);
+                                        },
+                                        onClose: () => console.log("⏹ Реклама закрыта"),
+                                        onError: (err) => console.warn("⚠️ Ошибка рекламы:", err)
+                                    }
+                                });
+                            }
                         });
                     }
                 })
                 .catch(err => {
                     console.warn("⚠️ Ошибка инициализации Yandex SDK:", err);
+                    window.ysdk = null;
+                    window.userLang = userLang;
+                    document.getElementById('loading-screen')?.remove();
                 });
         });
     </script>
 </head>
 <body>
-    <!-- Главное меню -->
+    <!-- ✅ ЗАГРУЗОЧНЫЙ ЭКРАН (новое) -->
+    <div id="loading-screen">Загрузка...</div>
+
+    <!-- ОСТАЛЬНОЙ КОНТЕНТ — КАК БЫЛ -->
     <div id="main-menu">
         <div class="menu-box">
             <h1>🎨 Yaplace</h1>
@@ -67,7 +107,10 @@
         </div>
     </div>
 
-    <!-- Игровой интерфейс -->
+    <div id="toast" class="toast hidden">
+        <p id="toast-message"></p>
+    </div>
+
     <div id="header">
         <h1>Yaplace</h1>
         <div id="pixel-counter">
@@ -81,8 +124,6 @@
 
     <div id="container">
         <canvas id="board"></canvas>
-
-        <!-- Sidebar с чатом -->
         <div id="sidebar">
             <h2>Чат</h2>
             <div id="chat-container">
@@ -100,7 +141,6 @@
         <button id="reset-view">Сброс вида</button>
     </div>
 
-    <!-- Модалка галереи -->
     <div id="gallery-modal" class="hidden">
         <div class="gallery-content">
             <button id="close-gallery">❌</button>
@@ -109,7 +149,6 @@
         </div>
     </div>
 
-    <!-- Основной код игры -->
     <script src="main.js" defer></script>
 </body>
 </html>
