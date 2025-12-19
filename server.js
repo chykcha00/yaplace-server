@@ -21,9 +21,6 @@ let db, boards, chats;
 const galleryDir = path.join(__dirname, "public", "gallery");
 let galleryOfWeek = [];
 
-// Статистика игроков
-const playerStats = new Map();
-
 function loadGallery() {
     if (!fs.existsSync(galleryDir)) {
         fs.mkdirSync(galleryDir, { recursive: true });
@@ -41,6 +38,7 @@ function loadGallery() {
     galleryOfWeek = files;
 }
 
+loadGallery();
 app.use("/gallery", express.static(galleryDir));
 app.get("/api/gallery", (_req, res) => res.json(galleryOfWeek));
 
@@ -131,10 +129,9 @@ app.get("/", (_req, res) =>
 
 // === WebSocket ===
 wss.on("connection", async (ws) => {
-    const connectionTime = Date.now();
+    ws.connectTime = Date.now();
     ws.pixelsPlaced = 0;
-    ws.adsWatched = 0;
-    ws.playerName = "Гость";
+    ws.adsWatched = 0; // placeholder — нет логики просмотра рекламы
 
     await loadBoard();
     await loadChat();
@@ -158,7 +155,6 @@ wss.on("connection", async (ws) => {
                 ws.playerName = name;
                 ws.send(JSON.stringify({ type: "nameAccepted", player: name }));
                 console.log(`Подключился игрок с именем ${name}`);
-                playerStats.set(ws, { name, connectionTime, pixelsPlaced: 0, adsWatched: 0 });
                 return;
             }
 
@@ -166,54 +162,37 @@ wss.on("connection", async (ws) => {
                 const { x, y, color, player } = data;
                 if (x >= 0 && y >= 0 && x < boardW && y < boardH) {
                     board[y][x] = color;
-                    ws.pixelsPlaced++;
-                    if (playerStats.has(ws)) {
-                        playerStats.get(ws).pixelsPlaced++;
-                    }
                     await saveBoard();
                     broadcast({ type: "pixel", x, y, color, player });
+                    ws.pixelsPlaced += 1;
                 }
                 return;
             }
 
             if (data.type === "chat") {
-                const playerName = data.player || "Гость";
-                const msg = {
-                    player: playerName,
-                    text: filterMessage(data.text)
-                };
+                const playerName = ws.playerName || "Гость";
+                const text = filterMessage(data.text);
+                const msg = { player: playerName, text };
                 chat.push(msg);
                 if (chat.length > 100) chat.shift();
                 await saveChat(msg);
-                broadcast({ type: "chat", player: msg.player, text: msg.text });
-                console.log(`Игрок ${playerName} написал в чат: ${data.text}`);
-                return;
-            }
-
-            if (data.type === "adWatched") {
-                ws.adsWatched++;
-                if (playerStats.has(ws)) {
-                    playerStats.get(ws).adsWatched++;
-                }
+                broadcast({ type: "chat", player: playerName, text });
+                console.log(`Игрок ${playerName} написал в чат: ${text}`);
                 return;
             }
 
         } catch (e) {
-            // Ошибка обработки сообщения
+            // Не выводим ошибки в консоль по вашему запросу
         }
     });
 
     ws.on("close", () => {
-        const stats = playerStats.get(ws);
-        if (stats) {
-            const timeInGame = Math.round((Date.now() - stats.connectionTime) / 1000);
-            console.log(`Игрок ${stats.name} вышел из игры, он пробыл в игре ${timeInGame} секунд, он поставил ${stats.pixelsPlaced} пикселей, посмотрел ${stats.adsWatched} реклам`);
-            playerStats.delete(ws);
-        }
+        const duration = Math.floor((Date.now() - ws.connectTime) / 1000);
+        const name = ws.playerName || "Неизвестный";
+        console.log(`Игрок ${name} вышел из игры, он пробыл в игре ${duration} сек, он поставил ${ws.pixelsPlaced} пикселей, посмотрел ${ws.adsWatched} реклам`);
     });
 });
 
-// === Рассылка всем игрокам ===
 function broadcast(msg) {
     const str = JSON.stringify(msg);
     wss.clients.forEach(client => {
@@ -221,6 +200,7 @@ function broadcast(msg) {
     });
 }
 
-// === Запуск ===
 const PORT = process.env.PORT || 8080;
-server.listen(PORT, () => console.log(`🌍 Сервер запущен на порту ${PORT}`));
+server.listen(PORT, () => {
+    // Убрано сообщение о запуске сервера
+});
