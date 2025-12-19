@@ -13,7 +13,7 @@ const boardW = 128;
 const boardH = 128;
 
 // === Подключение к MongoDB ===
-const uri = process.env.MONGODB_URI; // В Render добавить переменную окружения
+const uri = process.env.MONGODB_URI;
 const client = new MongoClient(uri);
 let db, boards, chats;
 
@@ -21,11 +21,12 @@ let db, boards, chats;
 const galleryDir = path.join(__dirname, "public", "gallery");
 let galleryOfWeek = [];
 
-// 📁 Загружаем все картинки из public/gallery
+// Статистика игроков
+const playerStats = new Map();
+
 function loadGallery() {
     if (!fs.existsSync(galleryDir)) {
         fs.mkdirSync(galleryDir, { recursive: true });
-        console.log("📁 Создана папка public/gallery");
     }
 
     const BASE_URL = process.env.BASE_URL || "https://yaplace-server.onrender.com";
@@ -34,21 +35,13 @@ function loadGallery() {
         .filter(f => /\.(png|jpg|jpeg|gif|webp)$/i.test(f))
         .map(f => ({
             title: path.parse(f).name,
-            image: `${BASE_URL}/gallery/${f}`  // 🔥 абсолютный URL
+            image: `${BASE_URL}/gallery/${f}`
         }));
 
-    console.log(`🖼 Найдено ${files.length} изображений в галерее`);
     galleryOfWeek = files;
 }
 
-
-// Загружаем при старте
-loadGallery();
-
-// Отдаём статические файлы галереи
 app.use("/gallery", express.static(galleryDir));
-
-// Эндпоинт для ручной проверки галереи
 app.get("/api/gallery", (_req, res) => res.json(galleryOfWeek));
 
 // === Инициализация базы ===
@@ -58,17 +51,12 @@ async function initDB() {
         db = client.db("yaplace");
         boards = db.collection("board");
         chats = db.collection("chat");
-        console.log("✅ Подключено к MongoDB");
 
         const existing = await boards.findOne({ _id: "main" });
         if (!existing) {
             const blank = Array.from({ length: boardH }, () => Array(boardW).fill("#FFFFFF"));
             await boards.insertOne({ _id: "main", data: blank });
-            console.log("🎨 Создано новое поле");
         }
-
-        const chatCount = await chats.countDocuments();
-        if (chatCount === 0) console.log("💬 Чат пуст");
     } catch (err) {
         console.error("❌ Ошибка подключения к MongoDB:", err);
     }
@@ -84,7 +72,6 @@ async function loadBoard() {
     const doc = await boards.findOne({ _id: "main" });
     if (doc?.data) {
         board = doc.data;
-        console.log("🎨 Поле загружено из MongoDB");
     }
 }
 
@@ -95,7 +82,6 @@ async function saveBoard() {
 async function loadChat() {
     chat = await chats.find().sort({ _id: -1 }).limit(100).toArray();
     chat.reverse();
-    console.log("💬 Чат загружен из MongoDB");
 }
 
 async function saveChat(msg) {
@@ -145,13 +131,15 @@ app.get("/", (_req, res) =>
 
 // === WebSocket ===
 wss.on("connection", async (ws) => {
-    console.log("✅ Новый игрок подключился");
+    const connectionTime = Date.now();
+    ws.pixelsPlaced = 0;
+    ws.adsWatched = 0;
+    ws.playerName = "Гость";
 
     await loadBoard();
     await loadChat();
 
     ws.send(JSON.stringify({ type: "init", board, chat }));
-    // Отправляем текущие рисунки недели
     ws.send(JSON.stringify({ type: "galleryOfWeek", items: galleryOfWeek }));
 
     ws.on("message", async (message) => {
@@ -165,12 +153,12 @@ wss.on("connection", async (ws) => {
                         type: "nameRejected",
                         reason: "Имя содержит запрещённые слова. Пожалуйста, выберите другое."
                     }));
-                    console.log(`⛔ Отклонено имя: ${name}`);
                     return;
                 }
                 ws.playerName = name;
                 ws.send(JSON.stringify({ type: "nameAccepted", player: name }));
-                console.log(`✅ Игрок установил имя: ${name}`);
+                console.log(`Подключился игрок с именем ${name}`);
+                playerStats.set(ws, { name, connectionTime, pixelsPlaced: 0, adsWatched: 0 });
                 return;
             }
 
@@ -178,6 +166,10 @@ wss.on("connection", async (ws) => {
                 const { x, y, color, player } = data;
                 if (x >= 0 && y >= 0 && x < boardW && y < boardH) {
                     board[y][x] = color;
+                    ws.pixelsPlaced++;
+                    if (playerStats.has(ws)) {
+                        playerStats.get(ws).pixelsPlaced++;
+                    }
                     await saveBoard();
                     broadcast({ type: "pixel", x, y, color, player });
                 }
@@ -185,23 +177,40 @@ wss.on("connection", async (ws) => {
             }
 
             if (data.type === "chat") {
+                const playerName = data.player || "Гость";
                 const msg = {
-                    player: data.player || "Гость",
+                    player: playerName,
                     text: filterMessage(data.text)
                 };
                 chat.push(msg);
                 if (chat.length > 100) chat.shift();
                 await saveChat(msg);
                 broadcast({ type: "chat", player: msg.player, text: msg.text });
+                console.log(`Игрок ${playerName} написал в чат: ${data.text}`);
+                return;
+            }
+
+            if (data.type === "adWatched") {
+                ws.adsWatched++;
+                if (playerStats.has(ws)) {
+                    playerStats.get(ws).adsWatched++;
+                }
                 return;
             }
 
         } catch (e) {
-            console.error("Ошибка обработки сообщения:", e);
+            // Ошибка обработки сообщения
         }
     });
 
-    ws.on("close", () => console.log("❌ Игрок отключился"));
+    ws.on("close", () => {
+        const stats = playerStats.get(ws);
+        if (stats) {
+            const timeInGame = Math.round((Date.now() - stats.connectionTime) / 1000);
+            console.log(`Игрок ${stats.name} вышел из игры, он пробыл в игре ${timeInGame} секунд, он поставил ${stats.pixelsPlaced} пикселей, посмотрел ${stats.adsWatched} реклам`);
+            playerStats.delete(ws);
+        }
+    });
 });
 
 // === Рассылка всем игрокам ===
