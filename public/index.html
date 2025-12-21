@@ -74,7 +74,7 @@
                                         onOpen: () => console.log("▶️ Реклама запущена"),
                                         onRewarded: () => {
                                             console.log("🎁 Игрок получил награду");
-                                            if (window.updatePixels) window.updatePixels(5);
+                                            if (window.updatePixels) window.updatePixels(10);
                                         },
                                         onClose: () => console.log("⏹ Реклама закрыта"),
                                         onError: (err) => console.warn("⚠️ Ошибка рекламы:", err)
@@ -116,7 +116,7 @@
         <div id="pixel-counter">
             Пиксели: <span id="pixels">100</span>
             <button id="collect-pixels">+10</button>
-            <button id="watch-ad">🎁 +5 за рекламу</button>
+            <button id="watch-ad">🎁 +10 за рекламу</button>
             <span id="collect-timer"></span>
         </div>
         <button id="open-gallery">🐉 Рисунки недели</button>

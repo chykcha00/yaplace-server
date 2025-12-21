@@ -183,7 +183,17 @@
         }
 
         let pixelCount = parseInt(localStorage.getItem("playerPixels")) || 30;
+        const isFirstTime = !localStorage.getItem("playerPixels");
+
         if (pixelCounter) pixelCounter.textContent = pixelCount;
+
+        if (isFirstTime) {
+            // Установим флаг, чтобы пиксели зачислялись только при первом входе
+            localStorage.setItem("playerPixels", 30);
+            pixelCount = 30;
+            if (pixelCounter) pixelCounter.textContent = pixelCount;
+        }
+
 
         function updatePixels(amount) {
             pixelCount += amount;
